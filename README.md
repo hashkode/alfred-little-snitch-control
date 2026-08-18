@@ -74,8 +74,12 @@ The keyword is configurable in the workflow's configuration in Alfred.
 
 ## Usage
 
-Type `snitch` (default keyword) to see the last verified state and choose an
-action:
+Type `snitch` (default keyword), then <kbd>Tab</kbd> or <kbd>Space</kbd> to
+enter the workflow, and choose an action. Without that keystroke Alfred is still
+in its normal search, so it may rank its own results — including Little Snitch
+itself — above the workflow's rows.
+
+The list shows the last verified state:
 
 | Row | What it does |
 | --- | --- |
