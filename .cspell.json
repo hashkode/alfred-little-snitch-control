@@ -1,0 +1,35 @@
+{
+  "version": "0.2",
+  "language": "en,en-GB",
+  "ignorePaths": [
+    "dist/**",
+    "docs/images/**",
+    ".git/**",
+    "megalinter-reports/**"
+  ],
+  "ignoreRegExpList": [
+    "/`[^`]*`/",
+    "/\\]\\([^)]*\\)/"
+  ],
+  "words": [
+    "alfredapp",
+    "alfredworkflow",
+    "applescript",
+    "blocklist",
+    "codesign",
+    "hashkode",
+    "littlesnitch",
+    "NOPASSWD",
+    "osascript",
+    "passwordless",
+    "Powerpack",
+    "promptless",
+    "readback",
+    "rulegroup",
+    "runningwithcrayons",
+    "shellcheck",
+    "shfmt",
+    "unsets",
+    "writability"
+  ]
+}

@@ -17,9 +17,9 @@ import zlib
 SIZE = 512
 SUPERSAMPLE = 4
 
-INK = (0x11, 0x17, 0x24)        # deep slate — the badge body
-SHIELD = (0xF4, 0xF7, 0xFB)     # near-white shield
-ACCENT = (0x36, 0xC7, 0x8F)     # green: traffic allowed through the gate
+INK = (0x11, 0x17, 0x24)  # deep slate — the badge body
+SHIELD = (0xF4, 0xF7, 0xFB)  # near-white shield
+ACCENT = (0x36, 0xC7, 0x8F)  # green: traffic allowed through the gate
 CAUTION_BODY = (0xB4, 0x54, 0x09)
 CAUTION_MARK = (0xFF, 0xF6, 0xE6)
 
@@ -147,12 +147,15 @@ def write_png(path, rows, size):
 
 
 def main():
-    target = sys.argv[1] if len(sys.argv) > 1 else os.path.join("workflow")
+    target = sys.argv[1] if len(sys.argv) > 1 else "workflow"
     os.makedirs(target, exist_ok=True)
-    for name, sampler in (("icon.png", sample_main), ("icon-caution.png", sample_caution)):
+    for name, sampler in (
+        ("icon.png", sample_main),
+        ("icon-caution.png", sample_caution),
+    ):
         path = os.path.join(target, name)
         write_png(path, render(sampler, SIZE), SIZE)
-        print("wrote %s (%dx%d)" % (path, SIZE, SIZE))
+        print(f"wrote {path} ({SIZE}x{SIZE})")
 
 
 if __name__ == "__main__":

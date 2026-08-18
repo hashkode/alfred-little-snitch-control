@@ -1,0 +1,31 @@
+name: Links
+
+# Kept off the pull-request path on purpose: external links break for reasons
+# that have nothing to do with the change under review, and a flaky required
+# check trains people to ignore it.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lychee:
+    name: Check documentation links
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress
+            --max-retries 3
+            --accept 200,206,429
+            --exclude-path dist
+            "**/*.md"
+          fail: true

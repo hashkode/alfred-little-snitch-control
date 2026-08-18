@@ -58,11 +58,23 @@ trap cleanup EXIT INT TERM HUP
 
 /usr/bin/plutil -lint "$WORKFLOW_DIR/info.plist" >/dev/null || fail "info.plist is invalid"
 pass
-/bin/zsh -n \
-  "$WORKFLOW_DIR/bin/common.zsh" \
-  "$WORKFLOW_DIR/bin/menu" \
-  "$WORKFLOW_DIR/bin/action" || fail "a zsh source file has invalid syntax"
-pass
+# No third-party linter covers zsh — shellcheck and shfmt reject it rather than
+# degrading — so every zsh file in the repository is syntax-checked here.
+typeset -a zsh_sources
+zsh_sources=(
+  "$WORKFLOW_DIR/bin/common.zsh"
+  "$WORKFLOW_DIR/bin/menu"
+  "$WORKFLOW_DIR/bin/action"
+  "$ROOT_DIR/scripts/build.zsh"
+  "$ROOT_DIR/scripts/verify-modes.zsh"
+  "$ROOT_DIR/tests/run.zsh"
+  "$ROOT_DIR/tests/package.zsh"
+)
+for zsh_source in "${zsh_sources[@]}"; do
+  [[ -f "$zsh_source" ]] || fail "expected zsh source is missing: $zsh_source"
+  /bin/zsh -n "$zsh_source" || fail "invalid zsh syntax: ${zsh_source:t}"
+  pass
+done
 
 for script_path in bin/menu bin/action bin/common.zsh; do
   [[ -x "$WORKFLOW_DIR/$script_path" ]] || fail "$script_path is not executable"
@@ -99,10 +111,11 @@ done
   fail "scripts/verify-modes.zsh --self-test failed"
 pass
 
-# Every entry point must be immune to the user's zsh startup files.
-for script_path in bin/menu bin/action bin/common.zsh; do
-  head_line=$(/usr/bin/head -1 "$WORKFLOW_DIR/$script_path")
-  assert_equal '#!/bin/zsh -f' "$head_line" "$script_path must ignore zsh rc files"
+# Every entry point must be immune to the user's zsh startup files: a stray
+# `setopt` in ~/.zshenv would otherwise change how these behave.
+for zsh_source in "${zsh_sources[@]}"; do
+  head_line=$(/usr/bin/head -1 "$zsh_source")
+  assert_equal '#!/bin/zsh -f' "$head_line" "${zsh_source:t} must ignore zsh rc files"
 done
 
 # --- info.plist wiring -----------------------------------------------------

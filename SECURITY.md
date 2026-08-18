@@ -16,7 +16,7 @@ Only the most recent release receives fixes.
 
 Report privately through
 [GitHub Security Advisories](https://github.com/hashkode/alfred-little-snitch-control/security/advisories/new).
-If you cannot use GitHub, email hashkode@posteo.de.
+If you cannot use GitHub, email <hashkode@posteo.de>.
 
 Please do not open a public issue for a security problem. Expect an
 acknowledgement within 7 days. This is a single-maintainer project with no bug

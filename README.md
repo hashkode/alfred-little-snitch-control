@@ -213,9 +213,15 @@ No third-party runtime dependencies.
 
 ```sh
 make test          # pure: no Little Snitch, no license, no password required
+make lint          # MegaLinter, the same linters CI runs (needs Docker)
 make build         # writes dist/
 make package-test  # validates the built archive
 ```
+
+Linting covers Markdown, YAML, Python, GitHub Actions, spelling, secrets and
+`.editorconfig` compliance. It does **not** cover zsh: shellcheck and shfmt
+reject zsh rather than degrading, so every zsh file is syntax-checked by
+`make test` instead.
 
 `make test` runs entirely against mocks and writes nothing outside a temporary
 directory. Privileged behaviour cannot be automated; follow

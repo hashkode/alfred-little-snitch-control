@@ -1,0 +1,18 @@
+# The only Python in this repository is the icon generator, which uses the
+# standard library exclusively.
+target-version = "py39"
+line-length = 100
+
+[lint]
+select = [
+  "E",   # pycodestyle
+  "F",   # pyflakes
+  "W",   # pycodestyle warnings
+  "I",   # import sorting
+  "UP",  # pyupgrade
+  "B",   # bugbear
+  "C4",  # comprehensions
+  "SIM", # simplify
+  "RUF", # ruff-specific
+  "EXE", # shebang/executable consistency
+]
