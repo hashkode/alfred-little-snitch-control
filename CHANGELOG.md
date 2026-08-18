@@ -65,6 +65,14 @@ First public release.
   assigns to one. `zsh -n` does not catch this, and `status` reads like an
   ordinary name while actually being `$?`.
 - Continuous integration and a tag-driven release workflow.
+- MegaLinter, wired to the same configuration locally (`make lint`) and in CI,
+  covering Markdown, YAML, Python, GitHub Actions, spelling, secret scanning and
+  `.editorconfig` compliance. zsh is excluded deliberately — shellcheck and
+  shfmt reject it — so `make test` syntax-checks every zsh file in the
+  repository instead.
+- A weekly link check over the documentation, kept off the pull-request path so
+  an unrelated external outage cannot block a merge.
+- Dependabot for the CI actions, which are the only third-party code here.
 - `tests/package.zsh`, which validates a built archive; `tests/run.zsh` no
   longer builds anything and writes nothing outside a temporary directory.
 

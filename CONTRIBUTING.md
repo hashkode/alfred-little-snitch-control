@@ -11,9 +11,19 @@ temporary directory.
 
 ```sh
 make test          # unit and behaviour tests
+make lint          # MegaLinter, the same linters CI runs (needs Docker)
 make build         # writes dist/
 make package-test  # validates the built archive
 ```
+
+`make lint` pulls a container image on first use. If you would rather not run
+Docker locally, open the pull request and let CI report — the same
+configuration runs there, and lint findings are never a surprise at merge time.
+
+On Apple silicon the MegaLinter image runs under emulation, where the
+shellcheck process actionlint spawns per `run:` block is killed intermittently.
+`make lint` disables that one integration on arm64 so local runs are not
+spuriously red; CI runs natively and keeps it enabled.
 
 `make build` plus installing the result in Alfred requires Alfred 5 with the
 Powerpack. Exercising a real privileged action additionally requires Little
@@ -23,11 +33,12 @@ steps, say so in the pull request and they will be run before merging.
 ## Before submitting a change
 
 1. `make test` passes.
-2. If you touched packaging, `make package-test` passes.
-3. If you touched anything privileged — `bin/authorize.applescript`,
+2. `make lint` passes, or CI's Lint job is green.
+3. If you touched packaging, `make package-test` passes.
+4. If you touched anything privileged — `bin/authorize.applescript`,
    `bin/action`, or the action map — include a short security rationale and
    tests. The maintainer will run [the manual checklist](docs/MANUAL_TESTING.md).
-4. Add a CHANGELOG entry.
+5. Add a CHANGELOG entry.
 
 CI passing is necessary but not sufficient: the test suite deliberately
 exercises no privileged path, so the manual checklist remains a human release

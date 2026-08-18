@@ -13,3 +13,18 @@ indent_style = tab
 
 [*.md]
 trim_trailing_whitespace = false
+# Continuation lines under an ordered list align to "1. ", i.e. three columns.
+indent_size = unset
+
+# Property lists are tab-indented by convention, and that is what plutil and
+# PlistBuddy write back.
+[*.plist]
+indent_style = tab
+indent_size = unset
+
+# Binary artwork: the whitespace and newline rules above do not apply.
+[*.png]
+charset = unset
+end_of_line = unset
+insert_final_newline = false
+trim_trailing_whitespace = false
