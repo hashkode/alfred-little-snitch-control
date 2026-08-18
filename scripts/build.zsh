@@ -79,7 +79,8 @@ archive_path="$DIST_DIR/$archive_name"
 
 # Clear previous artifacts so a stale archive can never be mistaken for, or
 # validated in place of, the current one.
-/bin/rm -f -- "$DIST_DIR"/*.alfredworkflow "$DIST_DIR"/*.alfredworkflow.sha256
+# (N) so a first build in a fresh checkout does not die on an unmatched glob.
+/bin/rm -f -- "$DIST_DIR"/*.alfredworkflow(N) "$DIST_DIR"/*.alfredworkflow.sha256(N)
 
 # A sorted, explicit file list keeps entry order independent of the
 # filesystem's directory ordering, and stores no directory entries.
