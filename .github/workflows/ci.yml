@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test and package
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The suite runs entirely against mocks: no Little Snitch, no license,
+      # no administrator password, no privileged code path.
+      - name: Unit and behaviour tests
+        run: make test
+
+      - name: Build
+        run: make build
+
+      - name: Validate the built archive
+        run: ./tests/package.zsh
+
+      - name: Build is reproducible
+        run: |
+          first=$(shasum -a 256 dist/*.alfredworkflow | cut -d' ' -f1)
+          rm -rf dist
+          make build >/dev/null
+          second=$(shasum -a 256 dist/*.alfredworkflow | cut -d' ' -f1)
+          if [ "$first" != "$second" ]; then
+            echo "Build is not reproducible: $first != $second" >&2
+            exit 1
+          fi
+          echo "Reproducible: $first"
+
+      # Byte-comparing the PNGs would be fragile: zlib's output can differ
+      # between Python builds. This only proves the generator still runs and
+      # still produces well-formed artwork of the expected size.
+      - name: Icon generator still works
+        run: |
+          python3 scripts/make-icons.py "$RUNNER_TEMP/icons"
+          for icon in icon.png icon-caution.png; do
+            file "$RUNNER_TEMP/icons/$icon" | grep -q 'PNG image data, 512 x 512' || {
+              echo "scripts/make-icons.py did not produce a 512x512 $icon" >&2
+              exit 1
+            }
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workflow-${{ github.sha }}
+          path: dist/

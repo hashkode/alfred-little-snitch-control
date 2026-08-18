@@ -1,0 +1,225 @@
+#!/bin/zsh -f
+
+# -f (no rc files) keeps the user's ~/.zshenv from changing how a privileged
+# action behaves.
+
+set -u
+umask 077
+
+typeset -gr SCRIPT_DIR="${0:A:h}"
+typeset -gr APP_PATH="/Applications/Little Snitch.app"
+typeset -gr CLI_PATH="$APP_PATH/Contents/Components/littlesnitch"
+typeset -gr HELP_URL="https://github.com/hashkode/alfred-little-snitch-control#setup"
+typeset -gr DOWNLOAD_URL="https://www.obdev.at/products/littlesnitch/download.html"
+
+# Verifies code hashes and the certificate chain, not merely signature
+# metadata: "codesign -d" happily prints Objective Development's identifier and
+# team ID for a binary whose text segment has been overwritten.
+typeset -gr SIGNATURE_REQUIREMENT='=identifier "littlesnitch" and anchor apple generic and certificate leaf[subject.OU] = "MLZF7K7B5R"'
+
+source "$SCRIPT_DIR/common.zsh"
+
+# Alfred shows stdout as a notification. Failures are additionally mirrored to
+# stderr so they appear in Alfred's workflow debugger, where stdout does not
+# distinguish a refusal from a success.
+notify() {
+  /usr/bin/printf '%s\n' "$1"
+  exit 0
+}
+
+fail() {
+  /usr/bin/printf '%s\n' "$1"
+  /usr/bin/printf 'little-snitch-control: %s\n' "$1" >&2
+  exit 0
+}
+
+action_id="${1:-}"
+if (( $# != 1 )); then
+  fail "Unknown action — no Little Snitch setting was changed."
+fi
+
+case "$action_id" in
+  open.app)
+    if [[ -d "$APP_PATH" ]]; then
+      /usr/bin/open "$APP_PATH" >/dev/null 2>&1 || fail "Could not open Little Snitch."
+      notify "Opened Little Snitch."
+    else
+      fail "Little Snitch is not installed in /Applications."
+    fi
+    ;;
+  open.help)
+    /usr/bin/open "$HELP_URL" >/dev/null 2>&1 || fail "Could not open setup help."
+    notify "Opened setup help."
+    ;;
+  open.download)
+    /usr/bin/open "$DOWNLOAD_URL" >/dev/null 2>&1 || \
+      fail "Could not open the Little Snitch download page."
+    notify "Opened the Little Snitch download page."
+    ;;
+  refresh|mode.alert|mode.silent-allow|mode.silent-deny|filter.enable|filter.disable)
+    ;;
+  *)
+    fail "Unknown action — no Little Snitch setting was changed."
+    ;;
+esac
+
+if [[ ! -x "$CLI_PATH" || -L "$CLI_PATH" ]]; then
+  fail "Little Snitch 6 was not found in /Applications."
+fi
+
+# Compatibility and sanity checks, not a security boundary: this file lives in
+# the same user-writable bundle it is protecting. They catch a missing,
+# relocated, or non-Objective-Development executable before the user is asked
+# for a password. See SECURITY.md for what this design does and does not defend
+# against.
+for protected_path in \
+  "$APP_PATH" \
+  "$APP_PATH/Contents" \
+  "$APP_PATH/Contents/Components" \
+  "$CLI_PATH"; do
+  if [[ -L "$protected_path" ]]; then
+    fail "Little Snitch failed the ownership check; reinstall it from Objective Development."
+  fi
+
+  path_stat=$(/usr/bin/stat -f '%u %Lp' "$protected_path" 2>/dev/null) || \
+    fail "Little Snitch failed the ownership check; reinstall it from Objective Development."
+  owner_uid="${path_stat%% *}"
+  permissions="${path_stat##* }"
+
+  if [[ "$owner_uid" != "0" || "$permissions" != <-> ]]; then
+    fail "Little Snitch failed the ownership check; reinstall it from Objective Development."
+  fi
+
+  permission_bits=$(( 8#$permissions ))
+  if (( permission_bits & 8#022 )); then
+    fail "Little Snitch is writable by a non-root account; reinstall it before using this workflow."
+  fi
+done
+
+if ! /usr/bin/codesign --verify --strict -R "$SIGNATURE_REQUIREMENT" "$CLI_PATH" >/dev/null 2>&1; then
+  fail "Little Snitch's command-line tool failed signature verification; reinstall it from Objective Development."
+fi
+
+version_output=$("$CLI_PATH" --version 2>/dev/null)
+if (( $? != 0 )); then
+  fail "Little Snitch's command-line tool could not be run; reinstall it from Objective Development."
+fi
+if ! version=$(lsctl_version_from_output "$version_output"); then
+  fail "Little Snitch did not report a recognisable version; no command was run."
+fi
+if ! lsctl_is_supported_version "$version"; then
+  fail "Little Snitch $version is not supported; this workflow requires Little Snitch 6.2 or newer."
+fi
+
+cache_dir="$(lsctl_cache_dir)"
+lsctl_prepare_cache_dir "$cache_dir" || fail "Could not create a private workflow cache directory."
+
+lock_dir="$cache_dir/action.lock"
+if ! lsctl_acquire_lock "$lock_dir" "$$"; then
+  fail "Another Little Snitch action is still running."
+fi
+
+release_lock() {
+  lsctl_release_lock "$lock_dir" "$$"
+}
+trap release_lock EXIT INT TERM HUP
+
+# Keep the two streams apart. osascript and the AppleScript host emit their own
+# warnings on stderr (dyld, CFPrefs, deprecated scripting additions); folding
+# those into stdout would make a *successful* firewall change parse as an
+# unexpected status and report failure to the user.
+authorization_errors=$(/usr/bin/mktemp "$cache_dir/.osascript.XXXXXX") || \
+  fail "Could not create a temporary file for the authorization step."
+remove_error_file() {
+  /bin/rm -f "$authorization_errors" 2>/dev/null || true
+  release_lock
+}
+trap remove_error_file EXIT INT TERM HUP
+
+authorization_output=$(/usr/bin/osascript "$SCRIPT_DIR/authorize.applescript" "$action_id" 2>"$authorization_errors")
+authorization_status=$?
+authorization_message="$(/bin/cat "$authorization_errors")"
+
+if (( authorization_status != 0 )); then
+  if [[ "$authorization_message" == *"(-128)"* || "$authorization_message" == *"User canceled"* ]]; then
+    notify "Cancelled — no Little Snitch setting was changed."
+  fi
+  if [[ "$authorization_message" == *"(77)"* || "$authorization_message" == *"status 77"* ]]; then
+    fail "Little Snitch changed or failed its integrity check; no command was run."
+  fi
+  if [[ "$authorization_message" == *"(78)"* || "$authorization_message" == *"status 78"* ]]; then
+    fail "Little Snitch reported an unsupported version; no command was run."
+  fi
+  if [[ "$authorization_message" == *"Terminal"* || "$authorization_message" == *"not authorized"* || \
+        "$authorization_message" == *"Preferences"*"Security"* ]]; then
+    fail "Enable Little Snitch → Settings → Security → Allow access via Terminal, then try again."
+  fi
+  fail "Little Snitch rejected the request. Check Terminal access in its Security settings."
+fi
+
+if [[ "$authorization_output" != *"|"* || "$authorization_output" == *$'\n'* ]]; then
+  fail "Little Snitch returned an unexpected status; no result was cached."
+fi
+
+mode="${authorization_output%%|*}"
+filter="${authorization_output#*|}"
+if [[ "$mode" != "0" && "$mode" != "1" && "$mode" != "2" ]]; then
+  fail "Little Snitch returned an unknown operation mode; no result was cached."
+fi
+if [[ "$filter" != "true" && "$filter" != "false" ]]; then
+  fail "Little Snitch returned an unknown filter state; no result was cached."
+fi
+
+expected_mode=""
+expected_filter=""
+case "$action_id" in
+  mode.alert) expected_mode="0" ;;
+  mode.silent-allow) expected_mode="1" ;;
+  mode.silent-deny) expected_mode="2" ;;
+  filter.enable) expected_filter="true" ;;
+  filter.disable) expected_filter="false" ;;
+esac
+
+uid=$(/usr/bin/id -u)
+verified_at=$(/bin/date +%s)
+cache_written="true"
+if ! lsctl_write_cache "$mode" "$filter" "$version" "$uid" "$verified_at"; then
+  cache_written="false"
+fi
+
+cache_suffix=""
+if [[ "$cache_written" == "false" ]]; then
+  cache_suffix=" The actual status could not be cached."
+fi
+
+if [[ -n "$expected_mode" && "$mode" != "$expected_mode" ]]; then
+  fail "Mode change was not confirmed; Little Snitch reports $(lsctl_mode_label "$mode").${cache_suffix}"
+fi
+if [[ -n "$expected_filter" && "$filter" != "$expected_filter" ]]; then
+  fail "Filter change was not confirmed; Little Snitch reports $(lsctl_filter_label "$filter").${cache_suffix}"
+fi
+
+if [[ "$cache_written" == "false" ]]; then
+  fail "Little Snitch changed successfully, but its status could not be cached."
+fi
+
+case "$action_id" in
+  refresh)
+    notify "Status refreshed — Filter $(lsctl_filter_label "$filter") · $(lsctl_mode_label "$mode")."
+    ;;
+  mode.alert)
+    notify "Alert Mode enabled — Little Snitch will ask when no rule matches."
+    ;;
+  mode.silent-allow)
+    notify "Silent Allow enabled — unmatched connections will be allowed without asking."
+    ;;
+  mode.silent-deny)
+    notify "Silent Deny enabled — unmatched connections will be denied without asking."
+    ;;
+  filter.enable)
+    notify "Network Filter configured On — Little Snitch confirmed the preference."
+    ;;
+  filter.disable)
+    notify "Network Filter disabled — all connections are currently allowed by Little Snitch."
+    ;;
+esac

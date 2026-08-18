@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/hashkode/alfred-little-snitch-control/security/advisories/new
+    about: Report privately. Please do not open a public issue.
+  - name: Little Snitch itself
+    url: https://www.obdev.at/support/
+    about: Problems with Little Snitch belong with Objective Development.

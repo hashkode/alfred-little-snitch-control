@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+*.alfredworkflow binary
+*.png binary
+*.sha256 text

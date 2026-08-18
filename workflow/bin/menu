@@ -1,0 +1,248 @@
+#!/bin/zsh -f
+
+# -f (no rc files) keeps a user's ~/.zshenv from changing how this menu
+# renders. A stray "setopt ksh_arrays" would otherwise collapse the result
+# list to a single row, silently and with no error.
+
+set -u
+
+typeset -gr SCRIPT_DIR="${0:A:h}"
+source "$SCRIPT_DIR/common.zsh"
+
+typeset -g -a items
+items=()
+
+typeset -gr DEFAULT_CLI="/Applications/Little Snitch.app/Contents/Components/littlesnitch"
+typeset -gr APP_PATH="/Applications/Little Snitch.app"
+typeset -gr CAUTION_ICON="icon-caution.png"
+
+cli_path="$DEFAULT_CLI"
+# >>> test-hook — scripts/build.zsh deletes everything between these markers.
+# Lets the test suite point the unprivileged menu at a mock CLI. It is removed
+# from release builds so that nothing which can set this process's environment
+# can make the status display lie. The action backend never had an equivalent.
+if [[ "${LSCTL_TESTING:-0}" == "1" && -n "${LSCTL_TEST_CLI:-}" ]]; then
+  cli_path="$LSCTL_TEST_CLI"
+fi
+# <<< test-hook
+
+app_icon_json() {
+  if [[ -d "$APP_PATH" ]]; then
+    /usr/bin/printf ',"icon":{"type":"fileicon","path":%s}' \
+      "$(lsctl_json_string "$APP_PATH")"
+  else
+    /usr/bin/printf ',"icon":{"path":"icon.png"}'
+  fi
+}
+
+caution_icon_json() {
+  /usr/bin/printf ',"icon":{"path":%s}' "$(lsctl_json_string "$CAUTION_ICON")"
+}
+
+# A row that carries information but performs nothing.
+append_static_item() {
+  local uid="$1" title="$2" subtitle="$3" match="$4"
+  items+=("{\"uid\":$(lsctl_json_string "$uid"),\"title\":$(lsctl_json_string "$title"),\"subtitle\":$(lsctl_json_string "$subtitle"),\"match\":$(lsctl_json_string "$match"),\"valid\":false$(app_icon_json)}")
+}
+
+# A row that acts on Return.
+append_action_item() {
+  local uid="$1" title="$2" subtitle="$3" argument="$4" match="$5"
+  items+=("{\"uid\":$(lsctl_json_string "$uid"),\"title\":$(lsctl_json_string "$title"),\"subtitle\":$(lsctl_json_string "$subtitle"),\"arg\":$(lsctl_json_string "$argument"),\"match\":$(lsctl_json_string "$match"),\"valid\":true$(app_icon_json)}")
+}
+
+# A row that weakens or disables filtering. Return alone is inert; the action
+# is only reachable with Command-Return. The requirement is in the title so it
+# is legible without holding a modifier, and an autocomplete value makes a bare
+# Return visibly refine the query instead of doing nothing at all.
+append_gated_item() {
+  local uid="$1" title="$2" subtitle="$3" argument="$4" match="$5"
+  local autocomplete="$6" command_subtitle="$7"
+  items+=("{\"uid\":$(lsctl_json_string "$uid"),\"title\":$(lsctl_json_string "⌘↩ $title"),\"subtitle\":$(lsctl_json_string "$subtitle"),\"arg\":$(lsctl_json_string "$argument"),\"match\":$(lsctl_json_string "$match"),\"autocomplete\":$(lsctl_json_string "$autocomplete"),\"valid\":false,\"mods\":{\"cmd\":{\"valid\":true,\"arg\":$(lsctl_json_string "$argument"),\"subtitle\":$(lsctl_json_string "$command_subtitle")}}$(caution_icon_json)}")
+}
+
+emit() {
+  /usr/bin/printf '{"skipknowledge":true,"items":[%s]}\n' "${(j:,:)items}"
+  exit 0
+}
+
+if [[ ! -x "$cli_path" ]]; then
+  append_static_item \
+    "status-missing" \
+    "Little Snitch Not Found" \
+    "Expected Little Snitch 6 in /Applications" \
+    "little snitch not found missing install download status"
+  append_action_item \
+    "open-download" \
+    "Open Little Snitch Download Page" \
+    "Download Little Snitch from Objective Development" \
+    "open.download" \
+    "open little snitch download page install obtain"
+  emit
+fi
+
+version_output="$("$cli_path" --version 2>/dev/null)"
+version_status=$?
+version=""
+if (( version_status == 0 )); then
+  version=$(lsctl_version_from_output "$version_output") || version=""
+fi
+
+if [[ -z "$version" ]]; then
+  append_static_item \
+    "status-unreadable" \
+    "Little Snitch Version Unavailable" \
+    "The littlesnitch command could not be run" \
+    "little snitch version unavailable unreadable error status"
+  append_action_item \
+    "open-help" \
+    "Open Setup Help" \
+    "Requirements, Terminal access, and troubleshooting" \
+    "open.help" \
+    "open setup help documentation troubleshooting little snitch"
+  emit
+fi
+
+if ! lsctl_is_supported_version "$version"; then
+  append_static_item \
+    "status-unsupported" \
+    "Unsupported Little Snitch Version" \
+    "Found $version; this workflow requires Little Snitch 6.2 or newer" \
+    "unsupported little snitch version status"
+  append_action_item \
+    "open-help" \
+    "Open Setup Help" \
+    "Requirements, Terminal access, and troubleshooting" \
+    "open.help" \
+    "open setup help documentation troubleshooting little snitch"
+  emit
+fi
+
+version_note="Little Snitch $version"
+if lsctl_is_untested_version "$version"; then
+  version_note="Little Snitch $version (untested)"
+fi
+
+uid=$(/usr/bin/id -u)
+cache_file="$(lsctl_cache_file)"
+mode=""
+filter=""
+confirmed="not verified yet"
+
+if lsctl_read_cache "$cache_file" "$uid" && [[ "$LSCTL_STATE_VERSION" == "$version" ]]; then
+  mode="$LSCTL_STATE_MODE"
+  filter="$LSCTL_STATE_FILTER"
+  confirmed="verified $(lsctl_relative_age "$LSCTL_STATE_VERIFIED_AT")"
+  # The state words are folded into `match` so that everything the row
+  # displays is also searchable: `match` replaces title matching entirely.
+  append_action_item \
+    "status" \
+    "Filter: $(lsctl_filter_label "$filter") · Mode: $(lsctl_mode_label "$mode")" \
+    "Last $confirmed · $version_note" \
+    "refresh" \
+    "status current state filter mode refresh little snitch $(lsctl_filter_label "$filter") $(lsctl_mode_label "$mode")"
+else
+  if [[ -n "$LSCTL_STATE_VERSION" && "$LSCTL_STATE_VERSION" != "$version" ]]; then
+    unknown_subtitle="Little Snitch changed to $version — press ↩ to refresh"
+  else
+    unknown_subtitle="Press ↩ to refresh; macOS will ask for administrator access"
+  fi
+  append_action_item \
+    "status-unknown" \
+    "Filter: Unknown · Mode: Unknown" \
+    "$unknown_subtitle" \
+    "refresh" \
+    "status current state unknown refresh little snitch"
+fi
+
+append_action_item \
+  "refresh" \
+  "Refresh Status" \
+  "Read and verify the current Little Snitch state" \
+  "refresh" \
+  "refresh status check verify read little snitch"
+
+# Re-applying Alert Mode or turning the filter on can only make the system
+# safer, so these stay actionable even when the cache already reports them
+# active — the cache may be stale, and refusing a safe re-apply would cost the
+# user two authorizations to recover.
+alert_title="Use Alert Mode"
+alert_subtitle="Ask when no existing rule matches"
+if [[ "$mode" == "0" ]]; then
+  alert_title="Use Alert Mode ✓"
+  alert_subtitle="Already active as of last $confirmed"
+fi
+append_action_item \
+  "mode-alert" \
+  "$alert_title" \
+  "$alert_subtitle" \
+  "mode.alert" \
+  "use alert mode ask warn prompt little snitch"
+
+allow_subtitle="Unmatched connections will be allowed without asking"
+if [[ "$mode" == "1" ]]; then
+  allow_subtitle="Already active as of last $confirmed"
+fi
+append_gated_item \
+  "mode-silent-allow" \
+  "Use Silent Allow" \
+  "$allow_subtitle" \
+  "mode.silent-allow" \
+  "use silent allow permit silence mode little snitch" \
+  "Use Silent Allow" \
+  "Enable Silent Allow — unmatched connections will be allowed"
+
+deny_subtitle="Unmatched connections will be denied without asking"
+if [[ "$mode" == "2" ]]; then
+  deny_subtitle="Already active as of last $confirmed"
+fi
+append_gated_item \
+  "mode-silent-deny" \
+  "Use Silent Deny" \
+  "$deny_subtitle" \
+  "mode.silent-deny" \
+  "use silent deny block refuse mode little snitch" \
+  "Use Silent Deny" \
+  "Enable Silent Deny — unmatched connections will be denied"
+
+filter_on_title="Enable Network Filter"
+filter_on_subtitle="Apply Little Snitch rules to network traffic"
+if [[ "$filter" == "true" ]]; then
+  filter_on_title="Enable Network Filter ✓"
+  filter_on_subtitle="Already active as of last $confirmed"
+fi
+append_action_item \
+  "filter-on" \
+  "$filter_on_title" \
+  "$filter_on_subtitle" \
+  "filter.enable" \
+  "enable network filter on start protect little snitch"
+
+filter_off_subtitle="All Little Snitch rules stop applying"
+if [[ "$filter" == "false" ]]; then
+  filter_off_subtitle="Already off as of last $confirmed"
+fi
+append_gated_item \
+  "filter-off" \
+  "Disable Network Filter" \
+  "$filter_off_subtitle" \
+  "filter.disable" \
+  "disable network filter off stop little snitch" \
+  "Disable Network Filter" \
+  "Disable now — all connections will be allowed by Little Snitch"
+
+append_action_item \
+  "open-app" \
+  "Open Little Snitch" \
+  "Open Network Monitor and manage rules" \
+  "open.app" \
+  "open little snitch app network monitor traffic rules"
+
+append_action_item \
+  "open-help" \
+  "Open Setup Help" \
+  "Requirements, Terminal access, and troubleshooting" \
+  "open.help" \
+  "open setup help documentation terminal access troubleshooting little snitch"
+
+emit
