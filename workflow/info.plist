@@ -144,7 +144,7 @@
 		</dict>
 	</array>
 	<key>readme</key>
-	<string>Before first use: in Little Snitch open Settings &gt; Security, unlock, and enable Allow access via Terminal. Then type snitch in Alfred and choose Refresh Status; macOS will ask for your administrator password. Silent Allow, Silent Deny and Disable Network Filter are only reachable with Command-Return.</string>
+	<string>Before first use: in Little Snitch open Settings &gt; Security, unlock, and enable "Allow access via Terminal". Then type snitch in Alfred, press Tab or Space to enter the workflow, and choose Refresh Status; macOS will ask for your administrator password. Silent Allow, Silent Deny and Disable Network Filter are only reachable with Command-Return.</string>
 	<key>uidata</key>
 	<dict>
 		<key>5F6E95FC-C05C-4513-A6C9-2E4169BB5886</key>
