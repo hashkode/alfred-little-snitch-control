@@ -33,7 +33,7 @@ jobs:
       - name: Test, build, and validate
         run: make all
 
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*.alfredworkflow
 
