@@ -13,7 +13,7 @@ it worked.
 [![Downloads](https://img.shields.io/github/downloads/hashkode/alfred-little-snitch-control/total)](https://github.com/hashkode/alfred-little-snitch-control/releases)
 [![License](https://img.shields.io/github/license/hashkode/alfred-little-snitch-control)](LICENSE)
 
-<!-- Add a screenshot of the result list here: docs/images/menu.png -->
+![The workflow's result list in Alfred, showing the last verified state and the available actions](docs/images/menu.png)
 
 ## Why
 
@@ -135,8 +135,10 @@ preferences:
 > value `0`; the values `1` and `2`, and `networkFilterEnabled` entirely, were
 > established by observation. They can change in any Little Snitch update
 > without notice. This is why every action reads the state back and reports what
-> Little Snitch actually says rather than what was requested. The mapping is
-> re-checked before each release with `scripts/verify-modes.zsh`.
+> Little Snitch actually says rather than what was requested. The mapping above
+> was confirmed against Little Snitch 6.4.1 — see
+> [docs/VERIFIED-MODES.md](docs/VERIFIED-MODES.md) — and is re-checked before
+> each release with `scripts/verify-modes.zsh`.
 
 Every privileged action follows the same sequence:
 
