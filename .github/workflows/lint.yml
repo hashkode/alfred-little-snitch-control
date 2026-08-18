@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           # MegaLinter lints only changed files on pull requests, which needs
           # history to diff against.
@@ -44,7 +44,7 @@ jobs:
 
       - name: Upload lint reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: megalinter-reports
           path: |

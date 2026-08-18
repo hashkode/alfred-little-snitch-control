@@ -19,7 +19,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       # The suite runs entirely against mocks: no Little Snitch, no license,
       # no administrator password, no privileged code path.
@@ -57,7 +57,7 @@ jobs:
             }
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: workflow-${{ github.sha }}
           path: dist/
