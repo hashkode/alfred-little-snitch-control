@@ -30,7 +30,7 @@ Examples of unacceptable behaviour:
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour may be
-reported to the maintainer at hashkode@posteo.de. All complaints will be
+reported to the maintainer at <hashkode@posteo.de>. All complaints will be
 reviewed and investigated promptly and fairly, and the reporter's privacy and
 security will be respected.
 
@@ -42,4 +42,4 @@ communicate reasons for moderation decisions when appropriate.
 
 Adapted from the [Contributor Covenant](https://www.contributor-covenant.org),
 version 2.1, available at
-https://www.contributor-covenant.org/version/2/1/code_of_conduct.html.
+<https://www.contributor-covenant.org/version/2/1/code_of_conduct.html>.

@@ -1,0 +1,17 @@
+# Prose is hand-wrapped at 80 columns, but tables, links and code samples are
+# not worth mangling to fit, so line length is not enforced.
+MD013: false
+
+# The README opens with an HTML heading so the icon can sit next to the title,
+# and <kbd> is the correct element for key names.
+MD033:
+  allowed_elements: [h1, img, kbd, br, details, summary]
+MD041: false
+
+# CHANGELOG repeats "### Fixed" and friends under each version.
+MD024:
+  siblings_only: true
+
+# Ordered lists are renumbered by hand; allow both styles.
+MD029:
+  style: one_or_ordered

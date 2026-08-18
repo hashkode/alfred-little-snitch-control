@@ -1,0 +1,45 @@
+# MegaLinter configuration — https://megalinter.io
+#
+# Deliberately a whitelist. Three things about this repository are worth knowing
+# before adding linters:
+#
+#   * The shell here is zsh, and shellcheck/shfmt do not support zsh — they
+#     reject it outright rather than degrading. So no shell linter runs, and
+#     `zsh -n` over every zsh file is part of tests/run.zsh instead.
+#   * workflow/info.plist is XML, but validating it needs Apple's DTD; it is
+#     checked with `plutil -lint` in tests/run.zsh and scripts/build.zsh.
+#   * Secret scanning is a separate step in .github/workflows/lint.yml: no
+#     MegaLinter flavor ships REPOSITORY_GITLEAKS, so enabling it here would
+#     force the full ~10 GB image for one check.
+
+APPLY_FIXES: none
+
+# Without this, MegaLinter assumes black's style and silently skips
+# PYTHON_RUFF_FORMAT even when it is listed in ENABLE_LINTERS.
+PYTHON_DEFAULT_STYLE: ruff
+
+SHOW_ELAPSED_TIME: true
+PRINT_ALPACA: false
+FAIL_IF_MISSING_LINTER_IN_FLAVOR: true
+
+ENABLE_LINTERS:
+  - ACTION_ACTIONLINT
+  - EDITORCONFIG_EDITORCONFIG_CHECKER
+  - MARKDOWN_MARKDOWNLINT
+  - PYTHON_RUFF
+  - PYTHON_RUFF_FORMAT
+  - SPELL_CSPELL
+  - YAML_YAMLLINT
+
+FILTER_REGEX_EXCLUDE: '(^|/)(dist|docs/images)/'
+
+MARKDOWN_MARKDOWNLINT_CONFIG_FILE: .markdownlint.yaml
+YAML_YAMLLINT_CONFIG_FILE: .yamllint.yml
+PYTHON_RUFF_CONFIG_FILE: ruff.toml
+PYTHON_RUFF_FORMAT_CONFIG_FILE: ruff.toml
+
+# Spell checking is worth it for documentation, where a typo is user-facing.
+# Running it over zsh and AppleScript would be mostly noise.
+SPELL_CSPELL_FILE_EXTENSIONS:
+  - .md
+SPELL_CSPELL_CONFIG_FILE: .cspell.json

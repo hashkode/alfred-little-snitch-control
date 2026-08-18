@@ -1,0 +1,13 @@
+version: 2
+
+updates:
+  # The workflow itself has no dependencies; these are the CI actions, which
+  # are the only third-party code in the repository.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies

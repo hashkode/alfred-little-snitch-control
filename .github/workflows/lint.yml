@@ -1,0 +1,54 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  megalinter:
+    name: MegaLinter
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # MegaLinter lints only changed files on pull requests, which needs
+          # history to diff against.
+          fetch-depth: 0
+
+      # The cupcake flavor carries every linter enabled in .mega-linter.yml.
+      # FAIL_IF_MISSING_LINTER_IN_FLAVOR makes a wrong flavor an error rather
+      # than a silently skipped check.
+      - name: MegaLinter
+        uses: oxsecurity/megalinter/flavors/cupcake@v10
+        env:
+          VALIDATE_ALL_CODEBASE: ${{ github.event_name != 'pull_request' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # No MegaLinter flavor ships gitleaks, and pulling the full image for one
+      # check is not worth it. The image is used directly rather than the
+      # gitleaks action, which requires a licence key for organisation accounts.
+      - name: Scan for committed secrets
+        env:
+          GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/repo" "$GITLEAKS_IMAGE" detect --source /repo --redact --no-banner
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: megalinter-reports
+          path: |
+            megalinter-reports
+            mega-linter.log
+          retention-days: 14
+          if-no-files-found: ignore

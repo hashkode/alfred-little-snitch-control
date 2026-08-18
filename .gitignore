@@ -13,3 +13,12 @@ work/
 
 # Compiled AppleScript (the workflow ships the .applescript source)
 *.scpt
+
+# MegaLinter
+megalinter-reports/
+
+# Linter caches
+.ruff_cache/
+
+# MegaLinter scratch files, left behind if a run is interrupted
+*megalinter_file_names_*.txt
