@@ -1,0 +1,15 @@
+# Build output — releases are published as GitHub Release assets, not committed.
+dist/
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Local scratch
+outputs/
+work/
+
+# Compiled AppleScript (the workflow ships the .applescript source)
+*.scpt

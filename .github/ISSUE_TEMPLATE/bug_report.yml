@@ -1,0 +1,98 @@
+name: Bug report
+description: Something in the workflow does not behave as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The two most common causes are a Little Snitch version the workflow has
+        not seen, and Terminal access being disabled. The first two fields
+        usually settle it.
+
+  - type: input
+    id: little-snitch-version
+    attributes:
+      label: Little Snitch version
+      description: Paste the exact output of the command below.
+      placeholder: Version 6.4.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: terminal-access
+    attributes:
+      label: Is "Little Snitch → Settings → Security → Allow access via Terminal" enabled?
+      options: ["Yes", "No", "Not sure"]
+    validations:
+      required: true
+
+  - type: textarea
+    id: message
+    attributes:
+      label: Exact message Alfred showed
+      description: Copy it verbatim — the wording identifies where it came from.
+    validations:
+      required: true
+
+  - type: input
+    id: row
+    attributes:
+      label: Which row did you choose, and did you use ⌘↩?
+      placeholder: "⌘↩ Disable Network Filter, using ⌘↩"
+    validations:
+      required: true
+
+  - type: input
+    id: workflow-version
+    attributes:
+      label: Workflow version
+      description: Alfred → Workflows → Little Snitch Control, in the [x] panel.
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and architecture
+      placeholder: "26.6.1, arm64"
+    validations:
+      required: true
+
+  - type: input
+    id: alfred
+    attributes:
+      label: Alfred version
+      placeholder: "5.7.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Does an active Little Snitch profile select an operation mode?
+      description: A profile can override a mode immediately after it is set.
+      options: ["No", "Yes", "Not sure"]
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Release asset, checksum verified
+        - Release asset, checksum not verified
+        - Built locally with make build
+    validations:
+      required: true
+
+  - type: textarea
+    id: debugger
+    attributes:
+      label: Alfred debugger output
+      description: >
+        Open the workflow in Alfred, click the debug (bug) icon, reproduce the
+        problem, then paste the output here.
+      render: shell
+    validations:
+      required: false
