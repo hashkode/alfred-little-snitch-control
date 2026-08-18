@@ -73,6 +73,32 @@ for asset in icon.png icon-caution.png; do
   pass
 done
 
+# zsh aborts a script outright when a read-only parameter is assigned, and
+# `zsh -n` does not catch it — `status` is $? and reads like an ordinary name.
+# Ask zsh which parameters those are rather than maintaining a list by hand.
+readonly_parameters=(${(f)"$(/bin/zsh -f -c 'typeset -r +')"})
+(( ${#readonly_parameters} > 0 )) || fail "could not enumerate zsh read-only parameters"
+pass
+for source_file in \
+  "$WORKFLOW_DIR/bin/menu" "$WORKFLOW_DIR/bin/action" "$WORKFLOW_DIR/bin/common.zsh" \
+  "$ROOT_DIR/scripts/build.zsh" "$ROOT_DIR/scripts/verify-modes.zsh" \
+  "$ROOT_DIR/tests/run.zsh" "$ROOT_DIR/tests/package.zsh"; do
+  for parameter in "${readonly_parameters[@]}"; do
+    [[ "$parameter" =~ '^[A-Za-z_][A-Za-z0-9_]*$' ]] || continue
+    if /usr/bin/grep -nE "^[[:space:]]*((local|typeset|declare|export)([[:space:]]+-[A-Za-z]+)*[[:space:]]+)?${parameter}=" \
+      "$source_file" >/dev/null; then
+      fail "${source_file:t} assigns to zsh's read-only parameter '$parameter'"
+    fi
+  done
+  pass
+done
+
+# The reporting half of verify-modes.zsh is otherwise reachable only after a
+# password and three interactive prompts, which is exactly where a bug hides.
+"$ROOT_DIR/scripts/verify-modes.zsh" --self-test "$temporary_dir/verify-modes" >/dev/null || \
+  fail "scripts/verify-modes.zsh --self-test failed"
+pass
+
 # Every entry point must be immune to the user's zsh startup files.
 for script_path in bin/menu bin/action bin/common.zsh; do
   head_line=$(/usr/bin/head -1 "$WORKFLOW_DIR/$script_path")

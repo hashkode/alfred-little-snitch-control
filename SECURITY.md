@@ -106,7 +106,8 @@ Two mitigations: every action reads the state back and reports what Little
 Snitch actually says, and `scripts/verify-modes.zsh` re-confirms which value
 corresponds to which operation mode before a release. It reads only — you change
 the mode in Little Snitch's own interface and it reports what the preference
-says.
+says. The current mapping was confirmed on Little Snitch 6.4.1; the result is
+recorded in [docs/VERIFIED-MODES.md](docs/VERIFIED-MODES.md).
 
 ## Design decisions taken deliberately
 

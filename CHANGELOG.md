@@ -58,7 +58,12 @@ First public release.
 
 - Original workflow artwork, generated from source by `scripts/make-icons.py`.
 - `scripts/verify-modes.zsh`, a read-only check of which `activeSilentMode`
-  value corresponds to each operation mode.
+  value corresponds to each operation mode, with a `--self-test` mode so its
+  reporting path is covered without root or the interactive prompts. The
+  mapping is confirmed on Little Snitch 6.4.1 in `docs/VERIFIED-MODES.md`.
+- A test that asks zsh which parameters are read-only and fails if any script
+  assigns to one. `zsh -n` does not catch this, and `status` reads like an
+  ordinary name while actually being `$?`.
 - Continuous integration and a tag-driven release workflow.
 - `tests/package.zsh`, which validates a built archive; `tests/run.zsh` no
   longer builds anything and writes nothing outside a temporary directory.
