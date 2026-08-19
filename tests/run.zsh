@@ -544,13 +544,13 @@ done
 
 malicious_marker="$temporary_dir/action-should-not-run"
 malicious_output=$("$WORKFLOW_DIR/bin/action" "mode.alert; /usr/bin/touch $malicious_marker" 2>/dev/null)
-assert_equal "Unknown action — no Little Snitch setting was changed." "$malicious_output" \
-  "unknown action was not rejected"
+assert_equal "Little Snitch Control failed — Unknown action — no Little Snitch setting was changed." \
+  "$malicious_output" "unknown action was not rejected"
 [[ ! -e "$malicious_marker" ]] || fail "unknown action caused command execution"
 pass
 
 multi_argument_output=$("$WORKFLOW_DIR/bin/action" refresh extra 2>/dev/null)
-assert_equal "Unknown action — no Little Snitch setting was changed." "$multi_argument_output" \
+assert_equal "Little Snitch Control failed — Unknown action — no Little Snitch setting was changed." "$multi_argument_output" \
   "extra arguments were not rejected"
 
 # Failures must reach Alfred's debugger, not only the notification.
@@ -712,6 +712,56 @@ assert_equal "Filter: Unknown · Mode: Unknown" "$(item_field "$version_mismatch
   "version-mismatched cache was trusted"
 assert_contains "$(item_field "$version_mismatch_json" status-unknown subtitle)" "6.4.1" \
   "a Little Snitch upgrade should be explained in the status row"
+
+
+# --- first-run guidance and failure reporting ------------------------------
+
+# Nothing unprivileged can detect whether "Allow access via Terminal" is on,
+# because reading any preference is itself privileged. On a first run the menu
+# must therefore say so up front, rather than letting an administrator password
+# prompt be the thing that delivers the setup instruction.
+write_mock "6.4.1"
+first_run_cache="$temporary_dir/first-run-cache"
+/bin/mkdir -p "$first_run_cache"
+first_run_json="$temporary_dir/first-run.json"
+alfred_workflow_cache="$first_run_cache" LSCTL_TESTING=1 LSCTL_TEST_CLI="$mock_cli" \
+  "$WORKFLOW_DIR/bin/menu" > "$first_run_json"
+/usr/bin/plutil -convert xml1 -o /dev/null "$first_run_json" 2>/dev/null || \
+  fail "the first-run menu is not valid JSON"
+pass
+assert_contains "$(item_field "$first_run_json" setup-required title)" "Allow access via Terminal" \
+  "a first run must name the prerequisite it cannot detect"
+assert_equal "icon-caution.png" "$(item_field "$first_run_json" setup-required icon.path)" \
+  "the setup row must carry the caution icon"
+assert_equal "0" "$(item_index_by_uid "$first_run_json" setup-required)" \
+  "the setup row must come before the unknown-status row"
+
+# Once state has been verified the row is gone: it is first-run guidance, not a
+# permanent warning.
+lsctl_write_cache "0" "true" "6.4.1" "$current_uid" "$(/bin/date +%s)" >/dev/null
+verified_json="$temporary_dir/verified.json"
+render_menu "$verified_json"
+if item_index_by_uid "$verified_json" setup-required >/dev/null 2>&1; then
+  fail "the setup row survived a verified refresh"
+fi
+pass
+
+# A failure and a success must not read alike, and no path may be silent: the
+# notification object shows nothing for empty input, so a script that dies
+# before printing gives no feedback at all after an administrator password.
+failure_output=$("$WORKFLOW_DIR/bin/action" not.an.action 2>/dev/null)
+assert_contains "$failure_output" "failed" "a refusal must be distinguishable from a success"
+pass
+
+silent_output=$(/bin/zsh -f -c "
+  source ${(q)WORKFLOW_DIR}/bin/common.zsh
+  LSCTL_SPOKE=0
+  report_silent_exit() { [[ \"\$LSCTL_SPOKE\" == 1 ]] && return; print -r -- 'Little Snitch Control failed unexpectedly'; }
+  trap report_silent_exit EXIT
+  exit 3
+" 2>/dev/null || true)
+assert_contains "$silent_output" "failed unexpectedly" \
+  "an abort before any output must still produce a notification"
 
 
 # --- the menu/action argument contract -------------------------------------

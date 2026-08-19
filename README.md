@@ -36,6 +36,19 @@ firewall.
 - macOS with Little Snitch 6.2 or newer installed in `/Applications`
 - Alfred 5 with the Powerpack
 - An administrator password each time the workflow reads or changes state
+- Little Snitch's **Allow access via Terminal** setting turned on
+
+That last one is the real cost of using this workflow, and it is worth
+understanding before you install. Objective Development ships it **off**
+specifically to stop scripts from manipulating your firewall settings. Turning
+it on lifts that restriction for *every* process running as you, not just this
+workflow — anything that can already run code as your user and obtain
+administrator rights can then drive `littlesnitch` too. This workflow cannot
+work without it, because `littlesnitch` refuses to run at all otherwise, even
+to read a value.
+
+If that trade is not one you want to make, use Little Snitch's own menu bar
+item instead. See [SECURITY.md](SECURITY.md) for the full threat model.
 
 Verified against Little Snitch 6.4.1 on macOS 26 (Apple silicon). Newer 6.x
 releases are accepted and labelled "untested" in the status row rather than
@@ -48,8 +61,11 @@ refused. Little Snitch 5 and earlier are refused.
 2. Verify the checksum published with that release:
 
    ```sh
-   shasum -a 256 -c Little-Snitch-Control-v0.2.0.alfredworkflow.sha256
+   shasum -a 256 -c Little-Snitch-Control-*.alfredworkflow.sha256
    ```
+
+   Run it in the download folder with both files present. `tests/package.zsh`
+   fails the release if this command ever names a stale version.
 
 3. Open the file to install it in Alfred.
 

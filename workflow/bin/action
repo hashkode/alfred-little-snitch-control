@@ -22,16 +22,40 @@ source "$SCRIPT_DIR/common.zsh"
 # Alfred shows stdout as a notification. Failures are additionally mirrored to
 # stderr so they appear in Alfred's workflow debugger, where stdout does not
 # distinguish a refusal from a success.
-notify() {
+#
+# The notification object is configured to show nothing when its input is
+# empty, so a script that dies before printing produces NO feedback at all --
+# after the user has just spent an administrator password. Silence is
+# indistinguishable from success. This flag plus the EXIT trap below guarantee
+# exactly one line reaches Alfred on every path, including an abort while
+# sourcing common.zsh or a partially unpacked bundle.
+typeset -g LSCTL_SPOKE="0"
+
+speak() {
+  LSCTL_SPOKE="1"
   /usr/bin/printf '%s\n' "$1"
+}
+
+notify() {
+  speak "$1"
   exit 0
 }
 
+# Failures are marked so a banner that weakened the firewall cannot be mistaken
+# for one that reports a refusal. Alfred renders a single notification style,
+# so the distinction has to be in the text itself.
 fail() {
-  /usr/bin/printf '%s\n' "$1"
+  speak "Little Snitch Control failed — $1"
   /usr/bin/printf 'little-snitch-control: %s\n' "$1" >&2
   exit 0
 }
+
+report_silent_exit() {
+  [[ "$LSCTL_SPOKE" == "1" ]] && return
+  /usr/bin/printf 'Little Snitch Control failed unexpectedly — no setting was changed.\n'
+  /usr/bin/printf 'little-snitch-control: exited without reporting a result\n' >&2
+}
+trap report_silent_exit EXIT
 
 action_id="${1:-}"
 if (( $# != 1 )); then
@@ -130,7 +154,7 @@ release_lock() {
 # EXIT trap, so cleanup runs twice on that path and every handler here has to
 # stay idempotent — `rm -f` is, and lsctl_release_lock returns immediately once
 # LSCTL_LOCK_FD is empty.
-trap release_lock EXIT
+trap 'release_lock; report_silent_exit' EXIT
 trap 'release_lock; exit 1' INT TERM HUP
 
 # Keep the two streams apart. osascript and the AppleScript host emit their own
@@ -143,7 +167,7 @@ remove_error_file() {
   /bin/rm -f "$authorization_errors" 2>/dev/null || true
   release_lock
 }
-trap remove_error_file EXIT
+trap 'remove_error_file; report_silent_exit' EXIT
 trap 'remove_error_file; exit 1' INT TERM HUP
 
 authorization_output=$(/usr/bin/osascript "$SCRIPT_DIR/authorize.applescript" "$action_id" 2>"$authorization_errors")

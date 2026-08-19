@@ -37,7 +37,43 @@ behaviour in a minor release.
   environment turned the library into a no-op and `bin/menu` emitted malformed
   JSON with no error. It now tests for a function the file defines.
 
+### Added
+
+- MegaLinter, wired to the same configuration locally (`make lint`) and in CI,
+  covering Markdown, YAML, Python, GitHub Actions, spelling, secret scanning and
+  `.editorconfig` compliance. zsh is excluded deliberately — shellcheck and
+  shfmt reject it — so `make test` syntax-checks every zsh file in the
+  repository instead.
+- A weekly link check over the documentation, kept off the pull-request path so
+  an unrelated external outage cannot block a merge.
+- Dependabot for the CI actions, which are the only third-party code here.
+
 ### Changed
+
+- Say up front, on a first run, that Little Snitch's *Allow access via
+  Terminal* setting must be enabled. Nothing unprivileged can detect whether it
+  is on — reading any preference is itself privileged — so previously the
+  prerequisite was delivered by an administrator password prompt followed by a
+  notification explaining the password had been spent for nothing. A caution
+  row now states it in the result list, and disappears once state has been
+  verified.
+- Distinguish a failed action from a successful one. Alfred renders a single
+  notification style, so "Network Filter disabled — all connections are
+  currently allowed" and "Cancelled — no Little Snitch setting was changed"
+  arrived as the same banner. Failures now say so.
+- Guarantee a notification on every path. The notification object shows nothing
+  for empty input, so a run that died before printing — `set -u` aborting while
+  sourcing `common.zsh`, a partially unpacked bundle — produced no feedback at
+  all after the user had spent an administrator password, and silence is
+  indistinguishable from success.
+- List *Allow access via Terminal* in the README's requirements with what it
+  actually costs: Objective Development ships it off to stop scripts
+  manipulating firewall settings, and enabling it lifts that restriction for
+  every process running as the user, not only this workflow.
+- Make the README's checksum command version-agnostic. It named a specific
+  release asset, so it broke on the next release at exactly the step the
+  project asks security-conscious users not to skip.
+
 
 - Package an explicit manifest instead of copying `workflow/` wholesale. The
   build shipped anything left in that directory — a `.DS_Store`, an editor swap
@@ -130,14 +166,6 @@ First public release.
   assigns to one. `zsh -n` does not catch this, and `status` reads like an
   ordinary name while actually being `$?`.
 - Continuous integration and a tag-driven release workflow.
-- MegaLinter, wired to the same configuration locally (`make lint`) and in CI,
-  covering Markdown, YAML, Python, GitHub Actions, spelling, secret scanning and
-  `.editorconfig` compliance. zsh is excluded deliberately — shellcheck and
-  shfmt reject it — so `make test` syntax-checks every zsh file in the
-  repository instead.
-- A weekly link check over the documentation, kept off the pull-request path so
-  an unrelated external outage cannot block a merge.
-- Dependabot for the CI actions, which are the only third-party code here.
 - `tests/package.zsh`, which validates a built archive; `tests/run.zsh` no
   longer builds anything and writes nothing outside a temporary directory.
 
