@@ -56,10 +56,11 @@ case "$action_id" in
       fail "Could not open the Little Snitch download page."
     notify "Opened the Little Snitch download page."
     ;;
-  refresh|mode.alert|mode.silent-allow|mode.silent-deny|filter.enable|filter.disable)
-    ;;
   *)
-    fail "Unknown action — no Little Snitch setting was changed."
+    # Everything that reaches here is either a privileged action or unknown.
+    # LSCTL_ACTIONS is the single list bin/menu is tested against, so a typo on
+    # either side is caught by the suite rather than at runtime.
+    lsctl_is_action "$action_id" || fail "Unknown action — no Little Snitch setting was changed."
     ;;
 esac
 
