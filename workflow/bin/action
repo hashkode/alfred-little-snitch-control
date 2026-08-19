@@ -114,15 +114,23 @@ fi
 cache_dir="$(lsctl_cache_dir)"
 lsctl_prepare_cache_dir "$cache_dir" || fail "Could not create a private workflow cache directory."
 
-lock_dir="$cache_dir/action.lock"
-if ! lsctl_acquire_lock "$lock_dir" "$$"; then
+lock_file="$cache_dir/action.lock"
+if ! lsctl_acquire_lock "$lock_file"; then
   fail "Another Little Snitch action is still running."
 fi
 
 release_lock() {
-  lsctl_release_lock "$lock_dir" "$$"
+  lsctl_release_lock
 }
-trap release_lock EXIT INT TERM HUP
+
+# zsh runs a trap handler for a caught signal and then RESUMES the script, so a
+# bare cleanup handler on INT/TERM/HUP would clean up mid-flight and then carry
+# on. The signal handlers must terminate instead. Their `exit` also fires the
+# EXIT trap, so cleanup runs twice on that path and every handler here has to
+# stay idempotent — `rm -f` is, and lsctl_release_lock returns immediately once
+# LSCTL_LOCK_FD is empty.
+trap release_lock EXIT
+trap 'release_lock; exit 1' INT TERM HUP
 
 # Keep the two streams apart. osascript and the AppleScript host emit their own
 # warnings on stderr (dyld, CFPrefs, deprecated scripting additions); folding
@@ -134,7 +142,8 @@ remove_error_file() {
   /bin/rm -f "$authorization_errors" 2>/dev/null || true
   release_lock
 }
-trap remove_error_file EXIT INT TERM HUP
+trap remove_error_file EXIT
+trap 'remove_error_file; exit 1' INT TERM HUP
 
 authorization_output=$(/usr/bin/osascript "$SCRIPT_DIR/authorize.applescript" "$action_id" 2>"$authorization_errors")
 authorization_status=$?
@@ -157,18 +166,12 @@ if (( authorization_status != 0 )); then
   fail "Little Snitch rejected the request. Check Terminal access in its Security settings."
 fi
 
-if [[ "$authorization_output" != *"|"* || "$authorization_output" == *$'\n'* ]]; then
+if ! lsctl_is_readback "$authorization_output"; then
   fail "Little Snitch returned an unexpected status; no result was cached."
 fi
 
 mode="${authorization_output%%|*}"
 filter="${authorization_output#*|}"
-if [[ "$mode" != "0" && "$mode" != "1" && "$mode" != "2" ]]; then
-  fail "Little Snitch returned an unknown operation mode; no result was cached."
-fi
-if [[ "$filter" != "true" && "$filter" != "false" ]]; then
-  fail "Little Snitch returned an unknown filter state; no result was cached."
-fi
 
 expected_mode=""
 expected_filter=""

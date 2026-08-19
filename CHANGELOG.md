@@ -4,6 +4,39 @@ All notable changes to this project are documented here. Versions follow
 [semantic versioning](https://semver.org/); releases before 1.0 may change
 behaviour in a minor release.
 
+## Unreleased
+
+### Fixed
+
+- Stop the privileged version check from being stricter than the unprivileged
+  one. The elevated shell required `littlesnitch --version` to match an
+  anchored pattern with nothing trailing, while the menu accepted any dotted
+  version it could parse. On a build printing `Version 6.5 (7012)` the menu
+  offered every action, the user approved an administrator prompt, and only
+  then was the action refused — for every action, forever. A table test now
+  asserts the two predicates agree.
+- Make the signal handlers in `bin/action` terminate. zsh runs a trap handler
+  and then resumes the script, so on `INT`/`TERM`/`HUP` the cleanup ran and the
+  script carried on regardless — reading a stderr file it had just deleted, so
+  a cancelled authorisation was reported as a rejected one. Note this does not
+  stop an already-authorised `osascript` child: a signal aimed at `bin/action`
+  alone still leaves that call in flight with the lock released.
+- Replace the `mkdir`-and-PID-file lock with a kernel advisory lock
+  (`zsystem flock`). Two processes that observed the same dead owner could each
+  rename the other's freshly created lock aside, after which both believed they
+  held it. The kernel releases the new lock on process death, including
+  `SIGKILL`, so no stale-owner recovery exists to race. A lock directory left
+  by an earlier release is cleared with `rmdir` — never `rm -rf`, which would
+  unlink a live lock file a concurrent process had just created — and a path
+  that is not a regular file is refused rather than blocking forever on it.
+- Validate the privileged readback against its exact permitted shape. The
+  previous guard rejected an embedded newline, but `do shell script` returns
+  AppleScript text in which a line break arrives as CR, so it could never fire.
+- Stop an inherited environment variable from disabling `common.zsh`. The
+  re-entry guard tested a variable, so `LSCTL_COMMON_LOADED=1` in the
+  environment turned the library into a no-op and `bin/menu` emitted malformed
+  JSON with no error. It now tests for a function the file defines.
+
 ## 0.2.0 — 2026-08-18
 
 First public release.

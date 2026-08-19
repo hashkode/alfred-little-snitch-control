@@ -59,8 +59,17 @@ and whether an active profile selects an operation mode.
   `Version 6.9`, confirm each is refused or accepted as documented — 6.2/6.4
   (no patch component) and a newer-than-tested minor are the two regressions
   most likely to slip through.
-- Terminate an action while its authorization dialog is open, then confirm the
-  next invocation recovers the dead-owner lock.
+- `kill -9` an action while its authorization dialog is open, then confirm the
+  next invocation is not blocked by the abandoned lock. There is no dead-owner
+  recovery to exercise: the kernel drops an fcntl lock when the holder dies.
+- Terminate an action with `kill` (not `kill -9`) while its dialog is open and
+  confirm no second authorization dialog appears, then check with `pgrep -f
+  authorize.applescript` that no orphaned `osascript` survives. A signal aimed
+  at `bin/action` alone leaves an already-authorised child running: the lock is
+  released, but the privileged call is still in flight.
+- Upgrading from 0.2.x: leave a leftover `action.lock` **directory** in the
+  workflow's cache directory and confirm the first action replaces it instead
+  of reporting "Another Little Snitch action is still running".
 - Trigger two actions from two separate Alfred invocations while a dialog is
   open, and confirm the second is refused as already running. (Alfred's own
   `concurrently: false` serialises a single invocation, so one window is not

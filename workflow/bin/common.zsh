@@ -2,9 +2,14 @@
 
 # Shared, unprivileged helpers. This file is never executed with administrator
 # privileges. Sourcing it twice in one shell is a no-op.
+#
+# The re-entry guard tests for a function this file defines rather than a
+# variable. A variable guard is settable from the environment, so exporting
+# LSCTL_COMMON_LOADED=1 used to turn the whole library into a no-op, after
+# which bin/menu emitted malformed JSON with no error. A function cannot be
+# forged through the environment.
 
-[[ -n "${LSCTL_COMMON_LOADED:-}" ]] && return 0
-typeset -gr LSCTL_COMMON_LOADED="1"
+(( ${+functions[lsctl_json_string]} )) && return 0
 
 typeset -gr LSCTL_CACHE_SCHEMA="1"
 typeset -gr LSCTL_BUNDLE_ID="com.hashkode.alfred.little-snitch-control"
@@ -76,6 +81,11 @@ lsctl_read_cache() {
   permissions=$(/usr/bin/stat -f '%Lp' "$cache_file" 2>/dev/null) || return 1
   [[ "$owner" == "$expected_uid" && "$permissions" == "600" ]] || return 1
 
+  # A record with no trailing newline is deliberately dropped, which makes the
+  # whole file fail validation below. lsctl_write_cache always writes complete,
+  # newline-terminated records through a temporary file and an atomic rename,
+  # so an unterminated final line means truncation or tampering, not a normal
+  # write in progress. tests/run.zsh asserts such a file is rejected.
   while IFS='=' read -r key value; do
     case "$key" in
       schema) schema="$value" ;;
@@ -171,6 +181,15 @@ lsctl_version_minor() {
   print -r -- "$minor"
 }
 
+# True only for the exact payload the privileged script is permitted to return.
+# Matching the whole shape rejects CR, LF, whitespace, extra fields and
+# out-of-range values in one predicate. `do shell script` hands its result back
+# as AppleScript text, in which a line break arrives as CR, so screening for a
+# literal newline could never have caught a multi-line payload.
+lsctl_is_readback() {
+  [[ "$1" == (0|1|2)"|"(true|false) ]]
+}
+
 lsctl_is_supported_version() {
   local version="$1" major minor
   major=$(lsctl_version_major "$version") || return 1
@@ -188,66 +207,74 @@ lsctl_is_untested_version() {
   (( 10#$minor > 10#$LSCTL_TESTED_MAX_MINOR ))
 }
 
-lsctl_create_lock() {
-  local lock_dir="$1"
-  local owner_pid="$2"
+# Serialises privileged actions with a kernel advisory lock (zsystem flock,
+# which is an fcntl record lock). The kernel drops it when the process exits,
+# including on SIGKILL when no trap can run, so there is no stale-owner state.
+#
+# fcntl locks are owned by the PROCESS, not by a descriptor. Two consequences
+# the code below depends on, and which any future edit must preserve:
+#   * a second lock attempt from the same process is GRANTED, so re-entry has
+#     to be refused explicitly;
+#   * closing ANY descriptor to this path drops every lock the process holds on
+#     it, so nothing may reopen the lock file after the lock is taken.
+#
+# This replaces a mkdir+PID-file scheme that could not break a dead owner's
+# lock safely. Two processes that both observed the same dead PID would each
+# rename the survivor aside: the second renamed away a lock the first had just
+# legitimately created, after which both believed they held it and both went on
+# to prompt for administrator authorisation and mutate the same preferences.
+# There is no stale state to detect here, so that race cannot exist.
+typeset -g LSCTL_LOCK_FD=""
 
-  /bin/mkdir -m 700 "$lock_dir" 2>/dev/null || return 1
-  /usr/bin/printf '%s\n' "$owner_pid" > "$lock_dir/pid" || {
-    /bin/rmdir "$lock_dir" 2>/dev/null || true
-    return 1
-  }
-  /bin/chmod 600 "$lock_dir/pid" || return 1
+lsctl_acquire_lock() {
+  local lock_file="$1"
+  local fd=""
+
+  [[ -n "$lock_file" ]] || return 1
+  zmodload -F zsh/system b:zsystem 2>/dev/null || return 1
+
+  # The kernel grants a second flock on a new descriptor within the same
+  # process, so re-entry has to be refused here. One process holds at most one
+  # action lock; without this, a second call would silently leak the first
+  # descriptor and the lock would outlive its release.
+  [[ -z "$LSCTL_LOCK_FD" ]] || return 1
+
+  # Releases before 0.3.0 created a directory at this path. Clear it so an
+  # upgrade does not deadlock on a leftover that can never be opened as a file.
+  # rmdir, never rm -rf: between the test above and the removal another process
+  # may have migrated the path and taken the lock on a regular file, and rm -rf
+  # would unlink that live lock and let both processes proceed. rmdir refuses a
+  # regular file, so a late migrator falls through and is refused below.
+  if [[ -d "$lock_file" && ! -L "$lock_file" ]]; then
+    /bin/rm -f -- "$lock_file/pid" 2>/dev/null || true
+    /bin/rmdir -- "$lock_file" 2>/dev/null || true
+  fi
+
+  # Refuse anything that is not a regular file. Opening a FIFO would block
+  # forever; the directory lock this replaced failed cleanly instead.
+  [[ ! -L "$lock_file" ]] || return 1
+  [[ ! -e "$lock_file" || -f "$lock_file" ]] || return 1
+
+  # The open and the chmod must both precede the flock: reopening this path
+  # afterwards would release the lock (see the note above).
+  ( : >>"$lock_file" ) 2>/dev/null || return 1
+  /bin/chmod 600 "$lock_file" 2>/dev/null || return 1
+
+  # -t 0 fails immediately rather than waiting: a second action must be
+  # refused, never queued behind an authorisation dialog the user may ignore.
+  zsystem flock -t 0 -f fd "$lock_file" 2>/dev/null || return 1
+
+  LSCTL_LOCK_FD="$fd"
   return 0
 }
 
-lsctl_acquire_lock() {
-  local lock_dir="$1"
-  local owner_pid="$2"
-  local lock_pid="" aside
-
-  [[ "$owner_pid" == <-> && "$owner_pid" != "0" ]] || return 1
-
-  lsctl_create_lock "$lock_dir" "$owner_pid" && return 0
-
-  [[ -d "$lock_dir" && ! -L "$lock_dir" ]] || return 1
-  if [[ -f "$lock_dir/pid" && ! -L "$lock_dir/pid" ]]; then
-    IFS= read -r lock_pid < "$lock_dir/pid" || lock_pid=""
-  fi
-
-  if [[ "$lock_pid" == <-> && "$lock_pid" != "0" ]] && /bin/kill -0 "$lock_pid" 2>/dev/null; then
-    return 1
-  fi
-
-  # Break a dead owner's lock by renaming it aside: rename is atomic, so a
-  # racing process either wins the rename or fails it, and both then contend
-  # for a fresh mkdir. Removing the directory in place could delete a lock
-  # another process created in the meantime.
-  aside="${lock_dir}.stale.$$"
-  /bin/rm -rf -- "$aside" 2>/dev/null || true
-  if /bin/mv "$lock_dir" "$aside" 2>/dev/null; then
-    /bin/rm -rf -- "$aside" 2>/dev/null || true
-  fi
-
-  lsctl_create_lock "$lock_dir" "$owner_pid"
-}
-
+# The lock file is never unlinked. Deleting it while another process holds the
+# lock would let a third process create a new file at the same path and lock
+# that one instead, defeating the exclusion.
 lsctl_release_lock() {
-  local lock_dir="$1"
-  local owner_pid="${2:-}"
-  local lock_pid=""
-
-  [[ -d "$lock_dir" && ! -L "$lock_dir" ]] || return 0
-
-  if [[ -n "$owner_pid" ]]; then
-    if [[ -f "$lock_dir/pid" && ! -L "$lock_dir/pid" ]]; then
-      IFS= read -r lock_pid < "$lock_dir/pid" || lock_pid=""
-    fi
-    [[ -z "$lock_pid" || "$lock_pid" == "$owner_pid" ]] || return 1
-  fi
-
-  /bin/rm -f "$lock_dir/pid" 2>/dev/null || true
-  /bin/rmdir "$lock_dir" 2>/dev/null || true
+  [[ -n "$LSCTL_LOCK_FD" ]] || return 0
+  zsystem flock -u "$LSCTL_LOCK_FD" 2>/dev/null || true
+  LSCTL_LOCK_FD=""
   return 0
 }
 

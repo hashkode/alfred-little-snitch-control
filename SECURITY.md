@@ -64,8 +64,14 @@ turn the switch back off yourself.
   known schema and every value in range; an unrecognised key voids the whole
   file. It is invalidated when Little Snitch's version changes. Nothing
   privileged reads it — poisoning it can only mislead the display.
-- **Concurrent runs.** Actions are serialized with a lock whose stale-owner
-  recovery is a rename, so a racing process cannot delete a live lock.
+- **Concurrent runs.** Actions are serialised with a kernel advisory lock
+  (`zsystem flock`, an fcntl record lock) held by the process until it exits or
+  closes the file. The kernel releases it even on `SIGKILL`, so there is no
+  stale-owner state to detect and no window in which two processes can each
+  conclude the other's lock is dead. A signal delivered to `bin/action` alone
+  still leaves an already-authorised `osascript` child running to completion;
+  the lock does not survive that, so this is a bound on concurrency, not a
+  guarantee that no privileged call is in flight.
 - **Misreported outcomes.** Both preferences are read back after every action
   and must be literally `0`, `1`, `2` and `true`, `false`. If the observed state
   disagrees with the requested one, the workflow says so rather than claiming
