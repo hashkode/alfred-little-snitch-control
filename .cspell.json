@@ -17,6 +17,7 @@
     "applescript",
     "blocklist",
     "codesign",
+    "fcntl",
     "hashkode",
     "littlesnitch",
     "NOPASSWD",
