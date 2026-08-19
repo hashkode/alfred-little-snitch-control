@@ -45,6 +45,12 @@ append_static_item() {
   items+=("{\"uid\":$(lsctl_json_string "$uid"),\"title\":$(lsctl_json_string "$title"),\"subtitle\":$(lsctl_json_string "$subtitle"),\"match\":$(lsctl_json_string "$match"),\"valid\":false$(app_icon_json)}")
 }
 
+# As above, but marked with the caution icon.
+append_caution_item() {
+  local uid="$1" title="$2" subtitle="$3" match="$4"
+  items+=("{\"uid\":$(lsctl_json_string "$uid"),\"title\":$(lsctl_json_string "$title"),\"subtitle\":$(lsctl_json_string "$subtitle"),\"match\":$(lsctl_json_string "$match"),\"valid\":false$(caution_icon_json)}")
+}
+
 # A row that acts on Return.
 append_action_item() {
   local uid="$1" title="$2" subtitle="$3" argument="$4" match="$5"
@@ -146,6 +152,17 @@ else
     unknown_subtitle="Little Snitch changed to $version — press ↩ to refresh"
   else
     unknown_subtitle="Press ↩ to refresh; macOS will ask for administrator access"
+    # Nothing here can detect whether "Allow access via Terminal" is on:
+    # reading any preference is itself privileged. So on a first run, say it
+    # up front. Otherwise the prerequisite is delivered by an administrator
+    # password prompt — the most alarming thing this workflow does — followed
+    # by a notification telling the user it was needed. State it in the surface
+    # they are actually looking at instead.
+    append_caution_item \
+      "setup-required" \
+      "First run: enable Little Snitch → Settings → Security → Allow access via Terminal" \
+      "Without it the littlesnitch command refuses to run, even to read a value" \
+      "setup required terminal access security enable first run help"
   fi
   append_action_item \
     "status-unknown" \
