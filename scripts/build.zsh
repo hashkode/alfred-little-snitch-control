@@ -28,11 +28,29 @@ version=$(/usr/libexec/PlistBuddy -c 'Print :version' "$WORKFLOW_DIR/info.plist"
 
 /usr/bin/plutil -lint "$WORKFLOW_DIR/info.plist" >/dev/null
 
-for required in bin/menu bin/action bin/common.zsh; do
+# The packaged manifest, declared once. The pre-flight checks, the staging
+# copy, the mode fixing and the archive member list are all derived from it, so
+# the archive is a function of the tracked tree rather than of whatever happens
+# to be sitting in workflow/. Copying the directory wholesale shipped anything
+# left there -- a .DS_Store, an editor swap file, a compiled authorize.scpt
+# that .gitignore hides from git status -- which made the published checksum
+# reproducible per working tree instead of per commit.
+typeset -a WORKFLOW_EXECUTABLES WORKFLOW_DATA WORKFLOW_MANIFEST
+WORKFLOW_EXECUTABLES=(bin/menu bin/action bin/common.zsh)
+WORKFLOW_DATA=(bin/authorize.applescript info.plist icon.png icon-caution.png)
+WORKFLOW_MANIFEST=("${WORKFLOW_EXECUTABLES[@]}" "${WORKFLOW_DATA[@]}")
+
+for required in "${WORKFLOW_EXECUTABLES[@]}"; do
   [[ -x "$WORKFLOW_DIR/$required" ]] || abort "missing or non-executable: $required"
 done
-for required in bin/authorize.applescript info.plist icon.png icon-caution.png; do
+for required in "${WORKFLOW_DATA[@]}"; do
   [[ -f "$WORKFLOW_DIR/$required" ]] || abort "missing required file: $required"
+done
+
+# Refuse anything the manifest does not name, rather than silently shipping it.
+for found in "${(@f)$(cd "$WORKFLOW_DIR" && /usr/bin/find . -type f -print | /usr/bin/sed 's|^\./||')}"; do
+  [[ -n "$found" ]] || continue
+  (( ${WORKFLOW_MANIFEST[(Ie)$found]} )) || abort "unexpected file in workflow/: $found"
 done
 
 if /usr/bin/find "$WORKFLOW_DIR" -type l -print | /usr/bin/grep -q .; then
@@ -51,7 +69,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM HUP
 
-/usr/bin/ditto --norsrc --noextattr --noacl "$WORKFLOW_DIR" "$stage_dir"
+/bin/mkdir -p "$stage_dir/bin"
+for member in "${WORKFLOW_MANIFEST[@]}"; do
+  /usr/bin/ditto --norsrc --noextattr --noacl "$WORKFLOW_DIR/$member" "$stage_dir/$member"
+done
 
 # MIT requires the notice to travel with the distribution. Nothing else from
 # the repository ships: Alfred renders the info.plist "readme" key on import
@@ -66,9 +87,36 @@ if /usr/bin/grep -q 'LSCTL_TEST_CLI' "$stage_dir/bin/menu"; then
 fi
 /bin/zsh -n "$stage_dir/bin/menu" || abort "the staged menu is not valid zsh after stripping the test hook"
 
-/bin/chmod 755 "$stage_dir/bin/menu" "$stage_dir/bin/action" "$stage_dir/bin/common.zsh"
-/bin/chmod 644 "$stage_dir/info.plist" "$stage_dir/bin/authorize.applescript" \
-  "$stage_dir/icon.png" "$stage_dir/icon-caution.png" "$stage_dir/LICENSE"
+# Prove the stripped menu still RENDERS. The two guards above are negative --
+# "the hook is gone" and "the file parses" -- and both pass on a truncated
+# file: if the sed range's end marker is ever renamed or lost, sed deletes to
+# EOF and leaves a syntactically complete prefix that emits nothing. Alfred
+# would then show an empty result list with no error anywhere, which is the
+# hardest failure mode to diagnose from a bug report. This needs no Little
+# Snitch: with the app absent the menu renders its not-found rows instead.
+probe_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/alfred-little-snitch-probe.XXXXXX")
+probe_output="$probe_dir/menu.json"
+if ! alfred_workflow_cache="$probe_dir" "$stage_dir/bin/menu" > "$probe_output"; then
+  /bin/rm -rf -- "$probe_dir"
+  abort "the staged menu exited non-zero"
+fi
+if ! /usr/bin/plutil -convert xml1 -o /dev/null "$probe_output" 2>/dev/null; then
+  /bin/rm -rf -- "$probe_dir"
+  abort "the staged menu did not emit valid JSON"
+fi
+if ! /usr/bin/plutil -extract items.0.uid raw "$probe_output" >/dev/null 2>&1; then
+  /bin/rm -rf -- "$probe_dir"
+  abort "the staged menu emitted no items"
+fi
+/bin/rm -rf -- "$probe_dir"
+
+for member in "${WORKFLOW_EXECUTABLES[@]}"; do
+  /bin/chmod 755 "$stage_dir/$member"
+done
+for member in "${WORKFLOW_DATA[@]}"; do
+  /bin/chmod 644 "$stage_dir/$member"
+done
+/bin/chmod 644 "$stage_dir/LICENSE"
 
 # Pin every timestamp so the archive depends only on content and mode.
 /usr/bin/find "$stage_dir" -exec /usr/bin/touch -h -t "$FIXED_TIMESTAMP" {} +

@@ -213,6 +213,15 @@ for probe in 'plain' 'has "quote"' 'has \back' $'tab\there' $'form\ffeed' $'esc\
   /usr/bin/printf '{"value":%s}\n' "$(lsctl_json_string "$probe")" > "$probe_file"
   /usr/bin/plutil -convert xml1 -o /dev/null "$probe_file" 2>/dev/null || fail "lsctl_json_string produced invalid JSON for probe $probe_index"
   pass
+
+  # Validity is not the property that matters -- fidelity is. Asserting only
+  # that the document parses passes a stub that discards its input, and misses
+  # every regression that produces valid but WRONG JSON: dropping the \u00XX
+  # escaping of control characters, mangling multi-byte UTF-8 in the
+  # per-character rebuild, or double-escaping a backslash.
+  assert_equal "$probe" "$(/usr/bin/plutil -extract value raw -o - "$probe_file")" \
+    "lsctl_json_string did not round-trip probe $probe_index"
+
   probe_index=$(( probe_index + 1 ))
 done
 
@@ -463,8 +472,14 @@ assert_contains "$refresh_rendered" "MLZF7K7B5R" "the signing team must be pinne
 # every action, forever. This used to be guarded by a literal search for one
 # spelling of an upper bound, which could never fail and would not have caught
 # a bound written any other way.
-(( $(/usr/bin/printf '%s' "$refresh_rendered" | /usr/bin/grep -c -o "grep -Eq") == 1 )) || \
-  fail "the rendered root shell no longer has exactly one grep -Eq; the extraction below would pick the wrong one"
+count_occurrences() {
+  # grep -c counts matching LINES, and the rendered root shell is a single
+  # line, so it reports 1 no matter how many times the needle appears.
+  /usr/bin/printf '%s' "$2" | /usr/bin/grep -o -- "$1" | /usr/bin/wc -l | /usr/bin/tr -d ' '
+}
+
+assert_equal "1" "$(count_occurrences "grep -Eq" "$refresh_rendered")" \
+  "the rendered root shell must contain exactly one grep -Eq, or the extraction below picks the wrong one"
 pass
 if [[ "$refresh_rendered" =~ "grep -Eq '([^']+)'" ]]; then
   privileged_version_pattern="${match[1]}"
@@ -509,11 +524,21 @@ for (( version_index = 1; version_index < ${#version_table}; version_index += 2 
 done
 
 # The user ID must be derived inside the privileged script, never accepted from
-# the caller.
-assert_not_contains "$(/bin/cat "$WORKFLOW_DIR/bin/authorize.applescript")" "item 2 of argv as numericUser" \
-  "the user ID must not come from argv"
-assert_contains "$(/bin/cat "$WORKFLOW_DIR/bin/authorize.applescript")" "id -u" \
-  "the privileged script must derive the invoking user itself"
+# the caller. Assert the OBSERVABLE property: the rendered command carries this
+# process's uid, exactly once. The previous guard searched the source for the
+# phrase "item 2 of argv as numericUser", which is not valid AppleScript for
+# the bug it describes and has never appeared in the file -- so it was a
+# permanent no-op, and the realistic regression (`set numericUser to item 2 of
+# argv`) passed it. argv item 2 is already consumed for --dry-run, so the two
+# are one edit apart.
+assert_equal "2" "$(count_occurrences "'-u' '$(/usr/bin/id -u)'" "$refresh_rendered")" \
+  "the privileged command must carry this process's own uid, once per read-preference call"
+
+for forged_uid in 0 1 501000; do
+  [[ "$forged_uid" == "$(/usr/bin/id -u)" ]] && continue
+  assert_not_contains "$refresh_rendered" "'-u' '$forged_uid'" \
+    "the rendered command must not carry a uid this process did not derive"
+done
 
 # --- bin/action ------------------------------------------------------------
 
@@ -687,5 +712,91 @@ assert_equal "Filter: Unknown · Mode: Unknown" "$(item_field "$version_mismatch
   "version-mismatched cache was trusted"
 assert_contains "$(item_field "$version_mismatch_json" status-unknown subtitle)" "6.4.1" \
   "a Little Snitch upgrade should be explained in the status row"
+
+
+# --- the menu/action argument contract -------------------------------------
+#
+# bin/menu emits action identifiers; bin/action accepts them in a dispatch that
+# now reads the same LSCTL_ACTIONS list. Asserting the two sets separately let
+# open.app and open.help drift with no coverage at all: a typo on either side
+# produced "Unknown action - no Little Snitch setting was changed" at runtime
+# while the whole suite stayed green. These identifiers are NOT exercised by
+# invoking bin/action, because open.* really do call /usr/bin/open.
+
+typeset -A rendered_actions
+
+collect_actions() {
+  local json="$1" index=0 value
+  while value=$(/usr/bin/plutil -extract "items.$index.uid" raw "$json" 2>/dev/null); do
+    for field in "items.$index.arg" "items.$index.mods.cmd.arg"; do
+      if value=$(/usr/bin/plutil -extract "$field" raw "$json" 2>/dev/null); then
+        [[ -n "$value" ]] && rendered_actions[$value]=1
+      fi
+    done
+    index=$(( index + 1 ))
+  done
+}
+
+# Every terminal state of the menu, so no reachable row is missed.
+write_mock "6.4.1"
+contract_normal="$temporary_dir/contract-normal.json"
+render_menu "$contract_normal"
+collect_actions "$contract_normal"
+
+contract_missing="$temporary_dir/contract-missing.json"
+alfred_workflow_cache="$cache_dir" LSCTL_TESTING=1 LSCTL_TEST_CLI="$temporary_dir/does-not-exist" \
+  "$WORKFLOW_DIR/bin/menu" > "$contract_missing"
+collect_actions "$contract_missing"
+
+write_mock "5.9.9"
+contract_unsupported="$temporary_dir/contract-unsupported.json"
+render_menu "$contract_unsupported"
+collect_actions "$contract_unsupported"
+
+# A CLI that runs but reports nothing parseable. This is the state a user is in
+# when Little Snitch is installed and "Allow access via Terminal" is off, which
+# is the single most common support case -- and it had no coverage.
+unreadable_cli="$temporary_dir/unreadable-cli"
+/usr/bin/printf '#!/bin/zsh\nprint -r -- "no digits here"\nexit 0\n' > "$unreadable_cli"
+/bin/chmod 755 "$unreadable_cli"
+contract_unreadable="$temporary_dir/contract-unreadable.json"
+alfred_workflow_cache="$cache_dir" LSCTL_TESTING=1 LSCTL_TEST_CLI="$unreadable_cli" \
+  "$WORKFLOW_DIR/bin/menu" > "$contract_unreadable"
+/usr/bin/plutil -convert xml1 -o /dev/null "$contract_unreadable" 2>/dev/null || \
+  fail "the version-unreadable menu is not valid JSON"
+pass
+assert_equal "Little Snitch Version Unavailable" \
+  "$(item_field "$contract_unreadable" status-unreadable title)" \
+  "a CLI that reports no parseable version must say so"
+assert_equal "open.help" "$(item_field "$contract_unreadable" open-help arg)" \
+  "the version-unreadable state must offer a route to the setup help"
+collect_actions "$contract_unreadable"
+
+failing_cli="$temporary_dir/failing-cli"
+/usr/bin/printf '#!/bin/zsh\nexit 1\n' > "$failing_cli"
+/bin/chmod 755 "$failing_cli"
+contract_failing="$temporary_dir/contract-failing.json"
+alfred_workflow_cache="$cache_dir" LSCTL_TESTING=1 LSCTL_TEST_CLI="$failing_cli" \
+  "$WORKFLOW_DIR/bin/menu" > "$contract_failing"
+assert_equal "Little Snitch Version Unavailable" \
+  "$(item_field "$contract_failing" status-unreadable title)" \
+  "a CLI that exits non-zero must render the version-unavailable state"
+collect_actions "$contract_failing"
+
+# Nothing the menu emits may be outside the accepted list.
+for emitted in "${(@k)rendered_actions}"; do
+  lsctl_is_action "$emitted" || \
+    fail "bin/menu emits '$emitted', which bin/action does not accept"
+  pass
+done
+
+# ...and nothing in the accepted list may be unreachable from the menu.
+for accepted in "${LSCTL_ACTIONS[@]}"; do
+  (( ${+rendered_actions[$accepted]} )) || \
+    fail "bin/action accepts '$accepted', which no menu row emits"
+  pass
+done
+
+write_mock "6.4.1"
 
 /usr/bin/printf 'All %d checks passed.\n' "$checks"

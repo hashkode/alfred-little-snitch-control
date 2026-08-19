@@ -71,8 +71,31 @@ packaged_version=$(/usr/libexec/PlistBuddy -c 'Print :version' "$extract_dir/inf
 [[ "$packaged_version" == "$version" ]] || \
   fail "packaged version ($packaged_version) does not match the source tree ($version)"
 
-/usr/bin/grep -q "^## ${version}" "$ROOT_DIR/CHANGELOG.md" || \
+# Anchored on a non-digit so "## 0.2.0" is not satisfied by "## 0.2.01".
+/usr/bin/grep -qE "^## ${version}([^0-9]|$)" "$ROOT_DIR/CHANGELOG.md" || \
   fail "CHANGELOG.md has no section for version $version"
+
+# README names the release asset in the checksum-verification command it asks
+# security-conscious users to run. A stale version there fails at exactly the
+# step the project asks people not to skip, so drift is a release blocker.
+readme_versions=$(/usr/bin/grep -o -E 'Little-Snitch-Control-v[0-9]+\.[0-9]+\.[0-9]+' \
+  "$ROOT_DIR/README.md" | /usr/bin/sort -u || true)
+for named in ${(f)readme_versions}; do
+  [[ "$named" == "Little-Snitch-Control-v${version}" ]] || \
+    fail "README.md names $named but the workflow version is $version"
+done
+
+# The packaged menu must actually render. Stripping the test hook with a sed
+# range can truncate the file to a syntactically valid prefix that emits
+# nothing, and Alfred shows an empty list with no error.
+probe_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/alfred-little-snitch-package-probe.XXXXXX")
+alfred_workflow_cache="$probe_dir" "$extract_dir/bin/menu" > "$probe_dir/menu.json" || \
+  fail "the packaged menu exited non-zero"
+/usr/bin/plutil -convert xml1 -o /dev/null "$probe_dir/menu.json" 2>/dev/null || \
+  fail "the packaged menu did not emit valid JSON"
+/usr/bin/plutil -extract items.0.uid raw "$probe_dir/menu.json" >/dev/null 2>&1 || \
+  fail "the packaged menu emitted no items"
+/bin/rm -rf -- "$probe_dir"
 
 checksum_file="$archive.sha256"
 [[ -f "$checksum_file" ]] || fail "checksum file not found: $checksum_file"

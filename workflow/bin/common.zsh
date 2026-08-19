@@ -186,6 +186,27 @@ lsctl_version_minor() {
 # out-of-range values in one predicate. `do shell script` hands its result back
 # as AppleScript text, in which a line break arrives as CR, so screening for a
 # literal newline could never have caught a multi-line payload.
+# Every action identifier bin/menu may emit and bin/action must accept. Both
+# sides read this one list, and tests/run.zsh asserts the rendered menu uses
+# nothing outside it and leaves nothing in it unreachable. Asserting the two
+# sets separately let open.app and open.help drift untested: a typo on either
+# side produced "Unknown action" at runtime with a green suite.
+typeset -gra LSCTL_ACTIONS=(
+  refresh
+  mode.alert
+  mode.silent-allow
+  mode.silent-deny
+  filter.enable
+  filter.disable
+  open.app
+  open.help
+  open.download
+)
+
+lsctl_is_action() {
+  (( ${LSCTL_ACTIONS[(Ie)$1]} ))
+}
+
 lsctl_is_readback() {
   [[ "$1" == (0|1|2)"|"(true|false) ]]
 }

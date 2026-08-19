@@ -37,6 +37,38 @@ behaviour in a minor release.
   environment turned the library into a no-op and `bin/menu` emitted malformed
   JSON with no error. It now tests for a function the file defines.
 
+### Changed
+
+- Package an explicit manifest instead of copying `workflow/` wholesale. The
+  build shipped anything left in that directory — a `.DS_Store`, an editor swap
+  file, a compiled `authorize.scpt` that `.gitignore` keeps out of
+  `git status` — which made the published checksum a function of the working
+  tree rather than of the commit. An unexpected file now fails the build.
+- Prove the released menu still renders. Stripping the test hook uses a `sed`
+  range; if its end marker is renamed or lost, `sed` deletes to end of file and
+  leaves a syntactically valid prefix that emits nothing, and Alfred shows an
+  empty list with no error. Both existing guards passed on that file. The build
+  and `tests/package.zsh` now run the staged and packaged menus and require
+  valid JSON with at least one item.
+- Read the accepted action identifiers from one list, `LSCTL_ACTIONS`, in both
+  `bin/action` and the suite.
+
+### Tests
+
+- Replace the second assertion that could not fail. The guard on the privileged
+  user ID searched the source for a phrase that is not valid AppleScript for
+  the bug it describes and has never appeared in the file; the realistic
+  regression passed it. It now asserts the rendered command carries this
+  process's own uid, exactly twice, and no other.
+- Assert `lsctl_json_string` round-trips its input rather than merely emitting
+  parseable JSON. The previous probes passed a stub that discards its argument.
+- Assert the menu emits no action identifier `bin/action` rejects, and that no
+  accepted identifier is unreachable from the menu. `open.app` and `open.help`
+  had no coverage at all.
+- Cover the version-unreadable menu state, which is what a user sees when
+  Little Snitch is installed and *Allow access via Terminal* is off — the most
+  common support case, and previously untested.
+
 ## 0.2.0 — 2026-08-18
 
 First public release.
