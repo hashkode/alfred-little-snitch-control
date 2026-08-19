@@ -104,6 +104,14 @@ behaviour in a minor release.
 - Cover the version-unreadable menu state, which is what a user sees when
   Little Snitch is installed and *Allow access via Terminal* is off — the most
   common support case, and previously untested.
+### Security
+
+- Pin every GitHub Actions dependency to a full commit SHA. `release.yml` holds
+  `contents: write` and `attestations: write`, so a repointed major tag could
+  have run arbitrary code in the job that publishes the release asset and mints
+  its build-provenance attestation. Dependabot keeps the pins current.
+- Update `actions/attest-build-provenance` from v2 to v4.2.2 as part of the
+  pinning pass.
 
 ## 0.2.0 — 2026-08-18
 
