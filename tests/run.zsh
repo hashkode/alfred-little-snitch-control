@@ -291,26 +291,114 @@ fi
 pass
 assert_equal "755" "$(/usr/bin/stat -f '%Lp' "$victim_dir")" "a symlinked cache directory had its target's mode changed"
 
-# --- common.zsh: locking ---------------------------------------------------
+# --- common.zsh: the privileged readback shape ------------------------------
+#
+# This predicate is the only thing standing between an unexpected privileged
+# result and a cached "success". Its previous form screened for a literal
+# newline, which `do shell script` never emits — it returns AppleScript text,
+# where a line break arrives as CR.
 
-stale_lock="$temporary_dir/stale.lock"
-/bin/mkdir -m 700 "$stale_lock"
-/usr/bin/printf '%s\n' '99999999' > "$stale_lock/pid"
-/bin/chmod 600 "$stale_lock/pid"
-lsctl_acquire_lock "$stale_lock" "$$" || fail "dead-owner lock was not recovered"
+readback_accept=( "0|true" "0|false" "1|true" "2|false" )
+for readback_case in "${readback_accept[@]}"; do
+  lsctl_is_readback "$readback_case" || fail "a legal readback '$readback_case' was rejected"
+  pass
+done
+
+readback_reject=(
+  "0|true "
+  " 0|true"
+  "0|true|extra"
+  "3|true"
+  "0|maybe"
+  "0"
+  "|true"
+  "0|TRUE"
+  "*|*"
+  $'0|true\r0|true'
+  $'0|true\n0|true'
+  $'0|true\r'
+  ""
+)
+for readback_case in "${readback_reject[@]}"; do
+  if lsctl_is_readback "$readback_case" ; then
+    fail "an illegal readback ${(qqq)readback_case} was accepted"
+  fi
+  pass
+done
+
+# Sourcing twice in one shell must stay a no-op rather than aborting on the
+# readonly declarations.
+/bin/zsh -f -c "source ${(q)WORKFLOW_DIR}/bin/common.zsh; source ${(q)WORKFLOW_DIR}/bin/common.zsh" 2>/dev/null || \
+  fail "sourcing common.zsh twice aborted"
 pass
-assert_equal "$$" "$(/bin/cat "$stale_lock/pid")" "recovered lock has the wrong owner PID"
-if lsctl_acquire_lock "$stale_lock" "$$"; then
-  fail "live lock was acquired twice"
+
+# --- common.zsh: locking ---------------------------------------------------
+#
+# The lock is a kernel advisory lock (zsystem flock). What matters is that a
+# second *process* is refused while a first holds it, and that the kernel frees
+# it when a holder dies without running any trap.
+
+in_child() {
+  /bin/zsh -f -c "source ${(q)WORKFLOW_DIR}/bin/common.zsh; $1"
+}
+
+lock_file="$temporary_dir/action.lock"
+lsctl_acquire_lock "$lock_file" || fail "a free lock could not be acquired"
+pass
+
+if in_child "lsctl_acquire_lock ${(q)lock_file}"; then
+  fail "a held lock was acquired by a second process"
 fi
 pass
-if lsctl_release_lock "$stale_lock" "$(( $$ + 1 ))"; then
-  fail "a lock was released by a process that does not own it"
+
+# One process holds at most one lock: the kernel would grant a second flock on
+# a new descriptor within the same process, which would leak the first.
+if lsctl_acquire_lock "$lock_file"; then
+  fail "the same process acquired the lock twice"
 fi
 pass
-lsctl_release_lock "$stale_lock" "$$" || fail "the lock owner could not release its own lock"
+
+# fcntl locks are released when the process closes ANY descriptor to the file,
+# so a re-entry attempt that reopened the path before being refused would
+# silently drop the lock it was protecting.
+if in_child "lsctl_acquire_lock ${(q)lock_file}"; then
+  fail "a refused re-entry attempt released the lock"
+fi
 pass
-[[ ! -d "$stale_lock" ]] || fail "the lock directory survived release"
+
+lsctl_release_lock || fail "the lock owner could not release its own lock"
+pass
+
+in_child "lsctl_acquire_lock ${(q)lock_file}" || fail "a released lock could not be re-acquired"
+pass
+
+# A holder killed with SIGKILL runs no trap. The kernel must still release it,
+# which is the whole reason this is not a PID file.
+killed_child=$(in_child "lsctl_acquire_lock ${(q)lock_file} && print HELD; kill -9 \$\$" 2>/dev/null || true)
+assert_equal "HELD" "$killed_child" "the SIGKILL fixture never acquired the lock, so the next assertion proves nothing"
+lsctl_acquire_lock "$lock_file" || fail "a SIGKILLed holder's lock was not released by the kernel"
+pass
+lsctl_release_lock
+
+# Releases before 0.3.0 created a directory at this path. An upgrade must not
+# deadlock on the leftover.
+legacy_lock="$temporary_dir/legacy.lock"
+/bin/mkdir -m 700 "$legacy_lock"
+/usr/bin/printf '%s\n' '99999999' > "$legacy_lock/pid"
+lsctl_acquire_lock "$legacy_lock" || fail "a leftover directory lock was not replaced"
+pass
+[[ -f "$legacy_lock" && ! -d "$legacy_lock" ]] || fail "the legacy lock directory was not replaced by a lock file"
+pass
+lsctl_release_lock
+
+# A symlink at the lock path must never be followed.
+symlinked_lock="$temporary_dir/symlink.lock"
+/bin/ln -s "$temporary_dir/lock-target" "$symlinked_lock"
+if lsctl_acquire_lock "$symlinked_lock"; then
+  fail "a symlinked lock path was accepted"
+fi
+pass
+[[ ! -e "$temporary_dir/lock-target" ]] || fail "a symlinked lock path created its target"
 pass
 
 # --- the privileged action map --------------------------------------------
@@ -368,8 +456,57 @@ assert_contains "$refresh_rendered" "unset GREP_OPTIONS" \
 assert_contains "$refresh_rendered" "check_cli; mode=\$(" \
   "each privileged read must be preceded by an integrity check"
 assert_contains "$refresh_rendered" "MLZF7K7B5R" "the signing team must be pinned"
-assert_not_contains "$refresh_rendered" "6\\.(2|3|4)" \
-  "the privileged version gate must not carry a hard upper bound"
+# The two version predicates must agree. The unprivileged one decides which
+# actions the menu offers; the privileged one decides whether the elevated
+# shell will run them. If the privileged side is the stricter of the two, the
+# user approves an administrator prompt and is refused only afterwards -- for
+# every action, forever. This used to be guarded by a literal search for one
+# spelling of an upper bound, which could never fail and would not have caught
+# a bound written any other way.
+(( $(/usr/bin/printf '%s' "$refresh_rendered" | /usr/bin/grep -c -o "grep -Eq") == 1 )) || \
+  fail "the rendered root shell no longer has exactly one grep -Eq; the extraction below would pick the wrong one"
+pass
+if [[ "$refresh_rendered" =~ "grep -Eq '([^']+)'" ]]; then
+  privileged_version_pattern="${match[1]}"
+else
+  fail "could not extract the privileged version pattern from the rendered root shell"
+fi
+pass
+
+typeset -a version_table
+version_table=(
+  "Version 6.2"        "6.2"
+  "Version 6.3"        "6.3"
+  "Version 6.4"        "6.4"
+  "Version 6.4.1"      "6.4.1"
+  "Version 6.5"        "6.5"
+  "Version 6.5 (7012)" "6.5"
+  "Version 6.5.beta"   "6.5"
+  "Version 6.10.2"     "6.10.2"
+  "Version 6.1"        "6.1"
+  "Version 6.0.4"      "6.0.4"
+  "Version 7.0"        "7.0"
+  "Version 5.9.9"      "5.9.9"
+)
+(( ${#version_table} % 2 == 0 )) || fail "version_table is not a list of pairs"
+pass
+for (( version_index = 1; version_index < ${#version_table}; version_index += 2 )); do
+  version_raw="${version_table[version_index]}"
+  version_parsed="${version_table[version_index + 1]}"
+
+  assert_equal "$version_parsed" "$(lsctl_version_from_output "$version_raw")" \
+    "the unprivileged parser misreads '$version_raw'"
+
+  if lsctl_is_supported_version "$version_parsed"; then
+    /usr/bin/printf '%s\n' "$version_raw" | /usr/bin/grep -Eq "$privileged_version_pattern" || \
+      fail "the menu offers actions for '$version_raw' but the privileged gate refuses it"
+  else
+    if /usr/bin/printf '%s\n' "$version_raw" | /usr/bin/grep -Eq "$privileged_version_pattern"; then
+      fail "the privileged gate accepts '$version_raw', which this workflow does not support"
+    fi
+  fi
+  pass
+done
 
 # The user ID must be derived inside the privileged script, never accepted from
 # the caller.
@@ -463,6 +600,16 @@ write_mock "6.4.1"
 lsctl_write_cache "0" "true" "6.4.1" "$current_uid" "$(/bin/date +%s)" >/dev/null
 menu_json="$temporary_dir/menu.json"
 render_menu "$menu_json"
+
+# The source-once guard must not be forgeable from the environment. It used to
+# test a variable, so exporting LSCTL_COMMON_LOADED=1 turned the whole library
+# into a no-op and bin/menu emitted malformed JSON with no error at all.
+forged_guard_json="$temporary_dir/forged-guard.json"
+LSCTL_COMMON_LOADED=1 alfred_workflow_cache="$cache_dir" LSCTL_TESTING=1 LSCTL_TEST_CLI="$mock_cli" \
+  "$WORKFLOW_DIR/bin/menu" > "$forged_guard_json"
+/usr/bin/plutil -convert xml1 -o /dev/null "$forged_guard_json" 2>/dev/null || \
+  fail "an inherited LSCTL_COMMON_LOADED disabled common.zsh and the menu emitted invalid JSON"
+pass
 
 assert_equal "Filter: On · Mode: Alert Mode" "$(item_field "$menu_json" status title)" \
   "cached state was not rendered"

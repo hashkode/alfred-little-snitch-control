@@ -111,7 +111,21 @@ on integrityCheckFunction(protectedPaths)
   set checkSource to checkSource & "[ -f " & quotedCLI & " ] && [ -x " & quotedCLI & " ] || return 77; "
   set checkSource to checkSource & "/usr/bin/codesign --verify --strict -R " & quotedRequirement & " " & quotedCLI & " >/dev/null 2>&1 || return 77; "
   set checkSource to checkSource & "reported_version=$(" & quotedCLI & " --version) || return 78; "
-  set checkSource to checkSource & "/usr/bin/printf '%s\\n' \"$reported_version\" | /usr/bin/grep -Eq '^Version 6\\.([2-9]|[1-9][0-9]+)(\\.[0-9]+)*$' || return 78; "
+  -- Must never be STRICTER than lsctl_is_supported_version in common.zsh. That
+  -- predicate extracts the first dotted number appearing anywhere in the output
+  -- and accepts major 6, minor >= 2. An anchored pattern here that additionally
+  -- demanded the "Version " prefix and nothing trailing disagreed with it: on a
+  -- build printing "Version 6.5 (7012)" the menu offered every action, the user
+  -- approved an administrator prompt, and only then did this check refuse --
+  -- every action, forever, after a password each time. Matching the version
+  -- anywhere in the output keeps this side no stricter, while still refusing a
+  -- major this workflow knows nothing about. There is deliberately no trailing
+  -- context group: requiring one made the gate stricter again for versions
+  -- followed by a dot ("Version 6.5.beta"). The leading (^|[^0-9.]) alone is
+  -- what refuses "Version 16.4" and "Version 1.6.2", and no trailing text can
+  -- turn a 6.x into a different major. tests/run.zsh asserts the two
+  -- predicates agree over a table of version strings.
+  set checkSource to checkSource & "/usr/bin/printf '%s\\n' \"$reported_version\" | /usr/bin/grep -Eq '(^|[^0-9.])6\\.([2-9]|[1-9][0-9]+)' || return 78; "
   set checkSource to checkSource & "}; "
   return checkSource
 end integrityCheckFunction
