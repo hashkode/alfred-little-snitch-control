@@ -1,8 +1,10 @@
 version: 2
 
 updates:
-  # The workflow itself has no dependencies; these are the CI actions, which
-  # are the only third-party code in the repository.
+  # The workflow itself has no dependencies. These are the CI actions -- the
+  # only third-party code Dependabot can cover here. Two container images run
+  # outside any ecosystem it parses and are pinned by hand: the gitleaks image
+  # in ci.yml and the MegaLinter image in the Makefile.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
