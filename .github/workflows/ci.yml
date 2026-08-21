@@ -208,10 +208,7 @@ jobs:
           fi
           if ! printf '%s' "$NEEDS" | jq -e 'all(.[]; .result == "success")' >/dev/null; then
             printf '::error::a required job did not succeed\n'
-            printf '%s' "$NEEDS" \
-              | jq -r 'to_entries[]
-                       | select(.value.result != "success")
-                       | "  \(.key): \(.value.result)"'
+            printf '%s' "$NEEDS" | jq -r 'to_entries[]|select(.value.result!="success")|"  \(.key): \(.value.result)"'
             exit 1
           fi
           printf 'All required jobs succeeded.\n'
