@@ -8,9 +8,21 @@
 #     `zsh -n` over every zsh file is part of tests/run.zsh instead.
 #   * workflow/info.plist is XML, but validating it needs Apple's DTD; it is
 #     checked with `plutil -lint` in tests/run.zsh and scripts/build.zsh.
-#   * Secret scanning is a separate step in .github/workflows/ci.yml: no
-#     MegaLinter flavor ships REPOSITORY_GITLEAKS, so enabling it here would
-#     force the full ~10 GB image for one check.
+#   * Secret scanning is a separate gitleaks step in .github/workflows/ci.yml.
+#     No MegaLinter flavor ships REPOSITORY_GITLEAKS -- verified against v10's
+#     flavor manifest, all 18 of them. The cupcake flavor does carry three other
+#     secret scanners, and all three were measured against a fixture holding an
+#     RSA private key, an AWS access key id and an AWS secret key:
+#
+#         gitleaks     3/3
+#         betterleaks  2/3   missed the AWS secret key
+#         secretlint   2/3   missed the AWS access key id
+#         trufflehog   0/3   MegaLinter runs it with --only-verified, so it
+#                            reports only credentials it can validate live
+#
+#     betterleaks and secretlint also scan `fs.content` -- the working tree --
+#     while gitleaks scans git history, so a secret committed and later deleted
+#     stays visible to gitleaks alone. None of the three is a replacement.
 
 APPLY_FIXES: none
 

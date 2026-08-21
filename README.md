@@ -229,15 +229,20 @@ No third-party runtime dependencies.
 
 ```sh
 make test          # pure: no Little Snitch, no license, no password required
-make lint          # MegaLinter, the same linters CI runs (needs Docker)
+make lint          # MegaLinter (needs Docker) -- a subset of CI, see below
 make build         # writes dist/
 make package-test  # validates the built archive
 ```
 
-Linting covers Markdown, YAML, Python, GitHub Actions, spelling, secrets and
+Linting covers Markdown, YAML, Python, GitHub Actions, spelling and
 `.editorconfig` compliance. It does **not** cover zsh: shellcheck and shfmt
 reject zsh rather than degrading, so every zsh file is syntax-checked by
 `make test` instead.
+
+`make lint` is a strict subset of what CI runs. Secret scanning (gitleaks) and
+the pull-request title check happen only in CI, and on Apple silicon `make
+lint` disables actionlint's shellcheck integration. A green `make lint` is
+necessary, not sufficient.
 
 `make test` runs entirely against mocks and writes nothing outside a temporary
 directory. Privileged behaviour cannot be automated; follow

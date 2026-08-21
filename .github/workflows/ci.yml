@@ -94,9 +94,12 @@ jobs:
           GITHUB_COMMENT_REPORTER: false
           GITHUB_STATUS_REPORTER: false
 
-      # No MegaLinter flavor ships gitleaks, and pulling the full image for one
-      # check is not worth it. The image is used directly rather than the
-      # gitleaks action, which requires a licence key for organisation accounts.
+      # gitleaks runs as its own container rather than as a MegaLinter linter.
+      # No flavor ships REPOSITORY_GITLEAKS, and the three secret scanners the
+      # cupcake flavor does carry were measured against a fixture and all three
+      # detect less -- see the table in .mega-linter.yml. The image is used
+      # directly rather than the gitleaks action, which requires a licence key
+      # for organisation accounts.
       - name: Scan for committed secrets
         env:
           # Pinned by digest, not tag: a tag is mutable, and this container's
@@ -105,8 +108,22 @@ jobs:
           GITLEAKS_IMAGE: >-
             ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
         run: |
+          # `detect --source` scans git HISTORY, and it fails open: when git
+          # refuses the repository -- dubious ownership, a missing .git, a
+          # shallow clone -- gitleaks reports "0 commits scanned / no leaks
+          # found" and exits 0. Reproduced locally. A clean pass is therefore
+          # not evidence on its own, so assert it actually read something.
+          set -o pipefail
+          log="$RUNNER_TEMP/gitleaks.log"
           docker run --rm -v "$GITHUB_WORKSPACE:/repo:ro" "$GITLEAKS_IMAGE" \
-            detect --source /repo --redact --no-banner
+            detect --source /repo --redact --no-banner 2>&1 | tee "$log"
+          commits=$(sed 's/\x1b\[[0-9;]*m//g' "$log" \
+            | sed -n 's/.*[[:space:]]\([0-9][0-9]*\) commits scanned.*/\1/p' | head -1)
+          if [ -z "$commits" ] || [ "$commits" -eq 0 ]; then
+            printf '::error::gitleaks scanned %s commits - it did not read the repository\n' "${commits:-no}"
+            exit 1
+          fi
+          printf 'gitleaks scanned %s commits\n' "$commits"
 
       - name: Upload lint reports
         if: always()
