@@ -101,8 +101,12 @@ jobs:
         env:
           # Pinned by digest, not tag: a tag is mutable, and this container's
           # result gates every merge. Resolved from ghcr.io's manifest API.
-          GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f # v8.30.1
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/repo:ro" "$GITLEAKS_IMAGE" detect --source /repo --redact --no-banner
+          # v8.30.1
+          GITLEAKS_IMAGE: >-
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo:ro" "$GITLEAKS_IMAGE" \
+            detect --source /repo --redact --no-banner
 
       - name: Upload lint reports
         if: always()
@@ -204,7 +208,10 @@ jobs:
           fi
           if ! printf '%s' "$NEEDS" | jq -e 'all(.[]; .result == "success")' >/dev/null; then
             printf '::error::a required job did not succeed\n'
-            printf '%s' "$NEEDS" | jq -r 'to_entries[] | select(.value.result != "success") | "  \(.key): \(.value.result)"'
+            printf '%s' "$NEEDS" \
+              | jq -r 'to_entries[]
+                       | select(.value.result != "success")
+                       | "  \(.key): \(.value.result)"'
             exit 1
           fi
           printf 'All required jobs succeeded.\n'
