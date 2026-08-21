@@ -8,6 +8,13 @@ behaviour in a minor release.
 
 ### Fixed
 
+- Stop MegaLinter reporting success while linters report errors. Formatter
+  findings are non-blocking by default, so `MARKDOWN_MARKDOWNLINT` and
+  `PYTHON_RUFF_FORMAT` could not fail the job — and that job is a required
+  check. A real run logged three markdownlint errors in `CHANGELOG.md`, said
+  "Successfully linted all files, but with ignored errors", and reported green.
+  `FORMATTERS_DISABLE_ERRORS: false` closes it; the three errors are fixed in
+  the same change, since flipping the flag alone would turn the gate red.
 - Stop the privileged version check from being stricter than the unprivileged
   one. The elevated shell required `littlesnitch --version` to match an
   anchored pattern with nothing trailing, while the menu accepted any dotted
@@ -37,19 +44,29 @@ behaviour in a minor release.
   environment turned the library into a no-op and `bin/menu` emitted malformed
   JSON with no error. It now tests for a function the file defines.
 
-### Added
-
-- MegaLinter, wired to the same configuration locally (`make lint`) and in CI,
-  covering Markdown, YAML, Python, GitHub Actions, spelling, secret scanning and
-  `.editorconfig` compliance. zsh is excluded deliberately — shellcheck and
-  shfmt reject it — so `make test` syntax-checks every zsh file in the
-  repository instead.
-- A weekly link check over the documentation, kept off the pull-request path so
-  an unrelated external outage cannot block a merge.
-- Dependabot for the CI actions, which are the only third-party code here.
-
 ### Changed
 
+- Consolidate `lint.yml` into `ci.yml` and gate merges on a single required
+  check, `ci-required`, which aggregates every other job. The job names
+  `MegaLinter` and `Test and package` are unchanged, so the contexts required
+  today keep reporting through the transition. The aggregator compares each
+  dependency against `success` rather than using `success()`, which treats a
+  cancelled dependency as non-failing, and asserts how many jobs it gates —
+  `all()` is vacuously true over an empty list, so a shortened `needs` would
+  otherwise leave the gate green while checking nothing.
+- Require the pull request title to be a Conventional Commit. Merges are
+  squash-only and the squash subject comes from the title, so the title is what
+  reaches `main`. Note this is a guardrail, not a proof: the merge dialog can
+  still override the subject.
+- Never cancel a push run on `main`. `cancel-in-progress` now applies only to
+  pull requests, so the default branch always keeps a completed record.
+- Pin the gitleaks container by digest instead of tag and mount the workspace
+  read-only. It was the one runtime dependency the SHA-pinning pass missed.
+- Silence MegaLinter's comment and status reporters, which need a permission
+  this workflow deliberately withholds and logged a 403 on every run.
+- Give the `Policy` and `ci-required` jobs no token: neither checks anything out.
+- Dependabot now prefixes `ci(deps)` rather than `ci`, keeping dependency bumps
+  distinguishable from hand-written CI changes in a generated changelog.
 - Say up front, on a first run, that Little Snitch's *Allow access via
   Terminal* setting must be enabled. Nothing unprivileged can detect whether it
   is on — reading any preference is itself privileged — so previously the
@@ -74,7 +91,6 @@ behaviour in a minor release.
   release asset, so it broke on the next release at exactly the step the
   project asks security-conscious users not to skip.
 
-
 - Package an explicit manifest instead of copying `workflow/` wholesale. The
   build shipped anything left in that directory — a `.DS_Store`, an editor swap
   file, a compiled `authorize.scpt` that `.gitignore` keeps out of
@@ -88,6 +104,17 @@ behaviour in a minor release.
   valid JSON with at least one item.
 - Read the accepted action identifiers from one list, `LSCTL_ACTIONS`, in both
   `bin/action` and the suite.
+
+### Added
+
+- MegaLinter, wired to the same configuration locally (`make lint`) and in CI,
+  covering Markdown, YAML, Python, GitHub Actions, spelling, secret scanning and
+  `.editorconfig` compliance. zsh is excluded deliberately — shellcheck and
+  shfmt reject it — so `make test` syntax-checks every zsh file in the
+  repository instead.
+- A weekly link check over the documentation, kept off the pull-request path so
+  an unrelated external outage cannot block a merge.
+- Dependabot for the CI actions, which are the only third-party code here.
 
 ### Tests
 
@@ -104,6 +131,7 @@ behaviour in a minor release.
 - Cover the version-unreadable menu state, which is what a user sees when
   Little Snitch is installed and *Allow access via Terminal* is off — the most
   common support case, and previously untested.
+
 ### Security
 
 - Pin every GitHub Actions dependency to a full commit SHA. `release.yml` holds
