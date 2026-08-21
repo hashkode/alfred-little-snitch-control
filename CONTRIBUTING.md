@@ -32,13 +32,17 @@ steps, say so in the pull request and they will be run before merging.
 
 ## Before submitting a change
 
-1. `make test` passes.
-2. `make lint` passes, or CI's Lint job is green.
-3. If you touched packaging, `make package-test` passes.
-4. If you touched anything privileged — `bin/authorize.applescript`,
+1. The pull request **title** is a Conventional Commit — `fix: …`, `ci(deps): …`,
+   an optional scope in lowercase. Merges are squash-only, so the title becomes
+   the commit subject on `main` and the changelog entry. CI checks this.
+2. `make test` passes.
+3. `make lint` passes, or CI is green. Note `make lint` does not cover
+   everything CI does: secret scanning and the title check run only in CI.
+4. If you touched packaging, `make package-test` passes.
+5. If you touched anything privileged — `bin/authorize.applescript`,
    `bin/action`, or the action map — include a short security rationale and
    tests. The maintainer will run [the manual checklist](docs/MANUAL_TESTING.md).
-5. Add a CHANGELOG entry.
+6. Add a CHANGELOG entry.
 
 CI passing is necessary but not sufficient: the test suite deliberately
 exercises no privileged path, so the manual checklist remains a human release

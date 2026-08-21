@@ -1,9 +1,20 @@
 name: CI
 
+# One workflow per repository, whose final job is the single required check.
+#
+# No paths / paths-ignore filters anywhere in this file, deliberately. A path
+# filter on the workflow that emits a required context means the context never
+# reports for a change that does not touch those paths, and the pull request
+# waits forever on a check that will never arrive.
 on:
   push:
     branches: [main]
+  # 'edited' is not in the default activity set (opened, synchronize,
+  # reopened). Without it the Policy job below reads a frozen event payload:
+  # a contributor who fixes a rejected title gets no re-run, and a title
+  # changed after a green run is never re-checked.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
 permissions:
@@ -11,9 +22,103 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded pull-request runs, but never a push to main: that run is
+  # the record of what the default branch actually does, and it is what a
+  # required-context name is read from after a change to this file.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Adding a job here is not enough to gate on it: it must also be added to
+# ci-required's `needs` and counted in EXPECTED_JOBS at the bottom of this file.
+# A job that is not in `needs` runs, can fail, and blocks nothing.
 jobs:
+  policy:
+    name: Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Checks nothing out and calls no API: it needs no token at all.
+    permissions: {}
+    steps:
+      # Squash is the only merge method, and the squash subject comes from the
+      # pull request title, so the title is what has to be a Conventional
+      # Commit -- not the branch commits. GitHub appends " (#123)" to the
+      # subject, which the trailing .+ tolerates.
+      #
+      # The title is untrusted input from whoever opened the pull request. It
+      # is passed through the environment rather than interpolated into the
+      # script, where "${{ ... }}" would be substituted before bash ever sees
+      # it and a crafted title could run commands.
+      - name: Pull request title is a Conventional Commit
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PATTERN: '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'
+        run: |
+          # bash's [[ =~ ]] anchors ^ to the start of the whole string. grep is
+          # line-oriented, so a title containing a newline could satisfy the
+          # pattern on a later line while its first line was anything at all.
+          if [[ ! "$PR_TITLE" =~ $PATTERN ]]; then
+            printf '::error::PR title is not a Conventional Commit\n'
+            printf 'Got: %s\n' "$PR_TITLE"
+            printf 'Expected <type>[optional scope][!]: <description>\n'
+            printf 'Types:  feat fix docs style refactor perf test build ci chore revert\n'
+            printf 'Scope:  optional, lowercase only -- fix(alfred): ... not fix(Alfred): ...\n'
+            printf 'Examples:\n'
+            printf '  fix: stop the privileged gate refusing versions the menu offers\n'
+            printf '  ci(deps): bump actions/checkout from 7.0.0 to 7.0.1\n'
+            exit 1
+          fi
+          printf 'PR title OK: %s\n' "$PR_TITLE"
+
+  megalinter:
+    name: MegaLinter
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # MegaLinter lints only changed files on pull requests, which needs
+          # history to diff against.
+          fetch-depth: 0
+
+      # The cupcake flavor carries every linter enabled in .mega-linter.yml.
+      # FAIL_IF_MISSING_LINTER_IN_FLAVOR makes a wrong flavor an error rather
+      # than a silently skipped check.
+      - name: MegaLinter
+        uses: oxsecurity/megalinter/flavors/cupcake@15e5b45552097e318c93de385779ce3b1084052c # v10.0.0
+        env:
+          VALIDATE_ALL_CODEBASE: ${{ github.event_name != 'pull_request' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Both reporters need pull-requests: write, which this workflow
+          # deliberately does not have. Left on, they POST on every run and log
+          # a 403 that looks like a failure but is not one.
+          GITHUB_COMMENT_REPORTER: false
+          GITHUB_STATUS_REPORTER: false
+
+      # No MegaLinter flavor ships gitleaks, and pulling the full image for one
+      # check is not worth it. The image is used directly rather than the
+      # gitleaks action, which requires a licence key for organisation accounts.
+      - name: Scan for committed secrets
+        env:
+          # Pinned by digest, not tag: a tag is mutable, and this container's
+          # result gates every merge. Resolved from ghcr.io's manifest API.
+          # v8.30.1
+          GITLEAKS_IMAGE: >-
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo:ro" "$GITLEAKS_IMAGE" \
+            detect --source /repo --redact --no-banner
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: megalinter-reports
+          path: |
+            megalinter-reports
+            mega-linter.log
+          retention-days: 14
+          if-no-files-found: ignore
+
   test:
     name: Test and package
     runs-on: macos-latest
@@ -61,3 +166,49 @@ jobs:
         with:
           name: workflow-${{ github.sha }}
           path: dist/
+
+  # The single required check. Everything above is an implementation detail
+  # that can be renamed or split without touching the ruleset.
+  #
+  # This must stay a normal local job. Moving it into a reusable workflow
+  # renames the emitted context to "<caller job> / <reusable job>", which no
+  # longer matches the name configured as required, and the gate silently
+  # stops gating.
+  ci-required:
+    name: ci-required
+    needs: [policy, megalinter, test]
+    # Without always() this job is skipped when a dependency fails, and a
+    # skipped required check never reports -- the pull request would sit
+    # blocked rather than showing a failure.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The gate holds no token: it reads job results and nothing else.
+    permissions: {}
+    steps:
+      # Aggregate on an explicit equality with "success". The obvious
+      # alternative, success(), treats a cancelled dependency as non-failing,
+      # and cancel-in-progress above makes cancellation reachable on every
+      # push to an open pull request. "skipped" is likewise not success.
+      - name: Every required job must have succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          # Must equal the length of the needs list above. jq's all() is
+          # vacuously true over an empty collection, so an emptied or shortened
+          # needs list would leave this job green while gating nothing at all.
+          # Asserting the count makes that a loud failure instead.
+          EXPECTED_JOBS: "3"
+        run: |
+          printf '%s\n' "$NEEDS"
+          observed=$(printf '%s' "$NEEDS" | jq 'length')
+          if [ "$observed" -ne "$EXPECTED_JOBS" ]; then
+            printf '::error::ci-required gates %s jobs but expected %s -- update EXPECTED_JOBS with the needs list\n' \
+              "$observed" "$EXPECTED_JOBS"
+            exit 1
+          fi
+          if ! printf '%s' "$NEEDS" | jq -e 'all(.[]; .result == "success")' >/dev/null; then
+            printf '::error::a required job did not succeed\n'
+            printf '%s' "$NEEDS" | jq -r 'to_entries[]|select(.value.result!="success")|"  \(.key): \(.value.result)"'
+            exit 1
+          fi
+          printf 'All required jobs succeeded.\n'

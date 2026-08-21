@@ -8,11 +8,18 @@
 #     `zsh -n` over every zsh file is part of tests/run.zsh instead.
 #   * workflow/info.plist is XML, but validating it needs Apple's DTD; it is
 #     checked with `plutil -lint` in tests/run.zsh and scripts/build.zsh.
-#   * Secret scanning is a separate step in .github/workflows/lint.yml: no
+#   * Secret scanning is a separate step in .github/workflows/ci.yml: no
 #     MegaLinter flavor ships REPOSITORY_GITLEAKS, so enabling it here would
 #     force the full ~10 GB image for one check.
 
 APPLY_FIXES: none
+
+# MegaLinter treats formatter findings as non-blocking by default, so
+# MARKDOWN_MARKDOWNLINT and PYTHON_RUFF_FORMAT could report errors while the
+# job still concluded success -- and this job is a required check. Observed on
+# a real run: three markdownlint errors in CHANGELOG.md, "Successfully linted
+# all files, but with ignored errors", check run green.
+FORMATTERS_DISABLE_ERRORS: false
 
 # Without this, MegaLinter assumes black's style and silently skips
 # PYTHON_RUFF_FORMAT even when it is listed in ENABLE_LINTERS.

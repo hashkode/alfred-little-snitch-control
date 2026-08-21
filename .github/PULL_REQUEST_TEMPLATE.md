@@ -4,6 +4,7 @@
 
 ## Checklist
 
+- [ ] Title is a Conventional Commit (`fix: …`) — it becomes the squash subject
 - [ ] `make test` passes on macOS
 - [ ] `make package-test` passes, if packaging changed
 - [ ] CHANGELOG entry added
