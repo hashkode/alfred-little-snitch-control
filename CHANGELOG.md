@@ -67,6 +67,10 @@ behaviour in a minor release.
 - Give the `Policy` and `ci-required` jobs no token: neither checks anything out.
 - Dependabot now prefixes `ci(deps)` rather than `ci`, keeping dependency bumps
   distinguishable from hand-written CI changes in a generated changelog.
+- Dependabot runs weekly with minor and patch bumps grouped into one pull
+  request and majors kept separate, capped at five open. Six pinned actions
+  ungrouped meant a quiet week could open several PRs, each costing a full CI
+  cycle.
 - Say up front, on a first run, that Little Snitch's *Allow access via
   Terminal* setting must be enabled. Nothing unprivileged can detect whether it
   is on — reading any preference is itself privileged — so previously the

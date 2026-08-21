@@ -6,7 +6,18 @@ updates:
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: monthly
+      interval: weekly
+    # Six pinned actions: ungrouped, a quiet week still opens several PRs that
+    # each need a full CI cycle. Minor and patch bumps travel together; a major
+    # gets its own PR, because that is the one that needs reading.
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     commit-message:
       # ci(deps) rather than a bare ci: dependency bumps stay distinguishable
       # from hand-written CI changes once the changelog is generated from
