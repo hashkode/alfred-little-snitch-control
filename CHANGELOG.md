@@ -6,46 +6,18 @@ behaviour in a minor release.
 
 ## Unreleased
 
-### Fixed
-
-- Stop MegaLinter reporting success while linters report errors. Formatter
-  findings are non-blocking by default, so `MARKDOWN_MARKDOWNLINT` and
-  `PYTHON_RUFF_FORMAT` could not fail the job — and that job is a required
-  check. A real run logged three markdownlint errors in `CHANGELOG.md`, said
-  "Successfully linted all files, but with ignored errors", and reported green.
-  `FORMATTERS_DISABLE_ERRORS: false` closes it; the three errors are fixed in
-  the same change, since flipping the flag alone would turn the gate red.
-- Stop the privileged version check from being stricter than the unprivileged
-  one. The elevated shell required `littlesnitch --version` to match an
-  anchored pattern with nothing trailing, while the menu accepted any dotted
-  version it could parse. On a build printing `Version 6.5 (7012)` the menu
-  offered every action, the user approved an administrator prompt, and only
-  then was the action refused — for every action, forever. A table test now
-  asserts the two predicates agree.
-- Make the signal handlers in `bin/action` terminate. zsh runs a trap handler
-  and then resumes the script, so on `INT`/`TERM`/`HUP` the cleanup ran and the
-  script carried on regardless — reading a stderr file it had just deleted, so
-  a cancelled authorisation was reported as a rejected one. Note this does not
-  stop an already-authorised `osascript` child: a signal aimed at `bin/action`
-  alone still leaves that call in flight with the lock released.
-- Replace the `mkdir`-and-PID-file lock with a kernel advisory lock
-  (`zsystem flock`). Two processes that observed the same dead owner could each
-  rename the other's freshly created lock aside, after which both believed they
-  held it. The kernel releases the new lock on process death, including
-  `SIGKILL`, so no stale-owner recovery exists to race. A lock directory left
-  by an earlier release is cleared with `rmdir` — never `rm -rf`, which would
-  unlink a live lock file a concurrent process had just created — and a path
-  that is not a regular file is refused rather than blocking forever on it.
-- Validate the privileged readback against its exact permitted shape. The
-  previous guard rejected an embedded newline, but `do shell script` returns
-  AppleScript text in which a line break arrives as CR, so it could never fire.
-- Stop an inherited environment variable from disabling `common.zsh`. The
-  re-entry guard tested a variable, so `LSCTL_COMMON_LOADED=1` in the
-  environment turned the library into a no-op and `bin/menu` emitted malformed
-  JSON with no error. It now tests for a function the file defines.
-
 ### Changed
 
+- Keep gitleaks as the secret scanner. The scanners bundled in the linter image
+  were measured and each detects less; the evidence, and the triggers for
+  revisiting it, are in `docs/decisions/secret-scanning.md`.
+- Assert gitleaks actually read the repository. `detect --source` scans git
+  history and fails open: when git refuses the repository it reports
+  "0 commits scanned / no leaks found" and exits 0, so a clean pass was not
+  evidence on its own. CI now fails if the scan covered no commits.
+- Stop claiming `make lint` runs the same linters as CI. It covers neither
+  secret scanning nor the pull-request title check, and disables actionlint's
+  shellcheck integration on Apple silicon.
 - Consolidate `lint.yml` into `ci.yml` and gate merges on a single required
   check, `ci-required`, which aggregates every other job. The job names
   `MegaLinter` and `Test and package` are unchanged, so the contexts required
@@ -108,6 +80,44 @@ behaviour in a minor release.
   valid JSON with at least one item.
 - Read the accepted action identifiers from one list, `LSCTL_ACTIONS`, in both
   `bin/action` and the suite.
+
+### Fixed
+
+- Stop MegaLinter reporting success while linters report errors. Formatter
+  findings are non-blocking by default, so `MARKDOWN_MARKDOWNLINT` and
+  `PYTHON_RUFF_FORMAT` could not fail the job — and that job is a required
+  check. A real run logged three markdownlint errors in `CHANGELOG.md`, said
+  "Successfully linted all files, but with ignored errors", and reported green.
+  `FORMATTERS_DISABLE_ERRORS: false` closes it; the three errors are fixed in
+  the same change, since flipping the flag alone would turn the gate red.
+- Stop the privileged version check from being stricter than the unprivileged
+  one. The elevated shell required `littlesnitch --version` to match an
+  anchored pattern with nothing trailing, while the menu accepted any dotted
+  version it could parse. On a build printing `Version 6.5 (7012)` the menu
+  offered every action, the user approved an administrator prompt, and only
+  then was the action refused — for every action, forever. A table test now
+  asserts the two predicates agree.
+- Make the signal handlers in `bin/action` terminate. zsh runs a trap handler
+  and then resumes the script, so on `INT`/`TERM`/`HUP` the cleanup ran and the
+  script carried on regardless — reading a stderr file it had just deleted, so
+  a cancelled authorisation was reported as a rejected one. Note this does not
+  stop an already-authorised `osascript` child: a signal aimed at `bin/action`
+  alone still leaves that call in flight with the lock released.
+- Replace the `mkdir`-and-PID-file lock with a kernel advisory lock
+  (`zsystem flock`). Two processes that observed the same dead owner could each
+  rename the other's freshly created lock aside, after which both believed they
+  held it. The kernel releases the new lock on process death, including
+  `SIGKILL`, so no stale-owner recovery exists to race. A lock directory left
+  by an earlier release is cleared with `rmdir` — never `rm -rf`, which would
+  unlink a live lock file a concurrent process had just created — and a path
+  that is not a regular file is refused rather than blocking forever on it.
+- Validate the privileged readback against its exact permitted shape. The
+  previous guard rejected an embedded newline, but `do shell script` returns
+  AppleScript text in which a line break arrives as CR, so it could never fire.
+- Stop an inherited environment variable from disabling `common.zsh`. The
+  re-entry guard tested a variable, so `LSCTL_COMMON_LOADED=1` in the
+  environment turned the library into a no-op and `bin/menu` emitted malformed
+  JSON with no error. It now tests for a function the file defines.
 
 ### Added
 

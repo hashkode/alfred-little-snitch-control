@@ -11,7 +11,7 @@ temporary directory.
 
 ```sh
 make test          # unit and behaviour tests
-make lint          # MegaLinter, the same linters CI runs (needs Docker)
+make lint          # MegaLinter (needs Docker) -- a subset of CI, see below
 make build         # writes dist/
 make package-test  # validates the built archive
 ```

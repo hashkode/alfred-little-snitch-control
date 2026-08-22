@@ -8,9 +8,9 @@
 #     `zsh -n` over every zsh file is part of tests/run.zsh instead.
 #   * workflow/info.plist is XML, but validating it needs Apple's DTD; it is
 #     checked with `plutil -lint` in tests/run.zsh and scripts/build.zsh.
-#   * Secret scanning is a separate step in .github/workflows/ci.yml: no
-#     MegaLinter flavor ships REPOSITORY_GITLEAKS, so enabling it here would
-#     force the full ~10 GB image for one check.
+#   * Secret scanning is a separate gitleaks step in .github/workflows/ci.yml.
+#     The scanners bundled in this flavor were evaluated and each detects less;
+#     see docs/decisions/secret-scanning.md.
 
 APPLY_FIXES: none
 
