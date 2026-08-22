@@ -8,14 +8,9 @@ behaviour in a minor release.
 
 ### Changed
 
-- Keep gitleaks as the secret scanner, and record why. The three scanners the
-  MegaLinter cupcake flavor already carries were measured against a fixture
-  holding an RSA private key, an AWS access key id and an AWS secret key:
-  gitleaks found 3 of 3, betterleaks 2, secretlint 2, and trufflehog 0 —
-  MegaLinter runs trufflehog with `--only-verified`, so it reports only
-  credentials it can validate against a live provider. betterleaks and
-  secretlint also scan the working tree rather than git history, so a secret
-  committed and later deleted stays visible to gitleaks alone.
+- Keep gitleaks as the secret scanner. The scanners bundled in the linter image
+  were measured and each detects less; the evidence, and the triggers for
+  revisiting it, are in `docs/decisions/secret-scanning.md`.
 - Assert gitleaks actually read the repository. `detect --source` scans git
   history and fails open: when git refuses the repository it reports
   "0 commits scanned / no leaks found" and exits 0, so a clean pass was not
