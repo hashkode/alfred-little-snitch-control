@@ -15,3 +15,9 @@ MD024:
 # Ordered lists are renumbered by hand; allow both styles.
 MD029:
   style: one_or_ordered
+
+# OKF documents (docs/decisions/, and the knowledge bundle they mirror) carry a
+# `title:` in frontmatter AND an H1 in the body. MD025 treats the frontmatter
+# title as the document's heading and flags the H1 as a second one.
+MD025:
+  front_matter_title: ""
