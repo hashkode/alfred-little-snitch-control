@@ -19,6 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # alfredforum.com answers non-browser clients with a bot challenge, so a
+      # result for it says nothing about the link; excluded by host rather than
+      # by accepting 403, which would hide revoked links elsewhere. Evidence: #35.
       - name: Check links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
@@ -26,6 +29,7 @@ jobs:
             --no-progress
             --max-retries 3
             --accept 200,206,429
+            --exclude '^https://www\.alfredforum\.com/'
             --exclude-path dist
             "**/*.md"
           fail: true
