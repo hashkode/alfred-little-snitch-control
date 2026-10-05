@@ -8,6 +8,10 @@ behaviour in a minor release.
 
 ### Changed
 
+- Exclude the Alfred forum from the weekly link check. It serves a bot
+  challenge to every non-browser client, so the check failed on every run
+  whether or not the link worked, and a check that is always red hides the
+  week a real link breaks.
 - Keep gitleaks as the secret scanner. The scanners bundled in the linter image
   were measured and each detects less; the evidence, and the triggers for
   revisiting it, are in `docs/decisions/secret-scanning.md`.
