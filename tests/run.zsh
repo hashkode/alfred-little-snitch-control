@@ -66,6 +66,7 @@ zsh_sources=(
   "$WORKFLOW_DIR/bin/menu"
   "$WORKFLOW_DIR/bin/action"
   "$ROOT_DIR/scripts/build.zsh"
+  "$ROOT_DIR/scripts/release-gate.zsh"
   "$ROOT_DIR/scripts/verify-modes.zsh"
   "$ROOT_DIR/tests/run.zsh"
   "$ROOT_DIR/tests/package.zsh"
@@ -91,10 +92,7 @@ done
 readonly_parameters=(${(f)"$(/bin/zsh -f -c 'typeset -r +')"})
 (( ${#readonly_parameters} > 0 )) || fail "could not enumerate zsh read-only parameters"
 pass
-for source_file in \
-  "$WORKFLOW_DIR/bin/menu" "$WORKFLOW_DIR/bin/action" "$WORKFLOW_DIR/bin/common.zsh" \
-  "$ROOT_DIR/scripts/build.zsh" "$ROOT_DIR/scripts/verify-modes.zsh" \
-  "$ROOT_DIR/tests/run.zsh" "$ROOT_DIR/tests/package.zsh"; do
+for source_file in "${zsh_sources[@]}"; do
   for parameter in "${readonly_parameters[@]}"; do
     [[ "$parameter" =~ '^[A-Za-z_][A-Za-z0-9_]*$' ]] || continue
     if /usr/bin/grep -nE "^[[:space:]]*((local|typeset|declare|export)([[:space:]]+-[A-Za-z]+)*[[:space:]]+)?${parameter}=" \
@@ -848,5 +846,232 @@ for accepted in "${LSCTL_ACTIONS[@]}"; do
 done
 
 write_mock "6.4.1"
+
+# --- the release gate -------------------------------------------------------
+#
+# scripts/release-gate.zsh decides whether a tag may publish. Every branch is
+# driven here through a fake gh serving API-shaped fixtures, so each refusal is
+# proven without a network, a token or a tag.
+
+gate_dir="$temporary_dir/release-gate"
+gate_fixtures="$gate_dir/fixtures"
+gate_sha="0123456789abcdef0123456789abcdef01234567"
+/bin/mkdir -p "$gate_dir/bin"
+
+# Answers only the endpoints the gate is expected to call, and fails loudly on
+# anything else, so an unmocked call cannot pass by accident. Check-run
+# fixtures are served in sequence -- check-runs.1.json, .2.json, ... reusing
+# the last -- which is how the waiting paths are driven.
+/bin/cat > "$gate_dir/bin/gh" <<'FAKEGH'
+#!/bin/zsh -f
+fixtures="$FAKE_GH_FIXTURES"
+[[ "${1:-}" == api ]] || { print -u2 "fake gh: only 'api' is supported"; exit 9 }
+endpoint="$2"
+print -r -- "$endpoint" >> "$fixtures/calls.log"
+case "$endpoint" in
+  repos/*/compare/*)
+    [[ -f "$fixtures/compare.json" ]] || { print -u2 "gh: Not Found (HTTP 404)"; exit 1 }
+    /bin/cat "$fixtures/compare.json" ;;
+  repos/*/commits/*/check-runs\?*)
+    n=$(( $(/bin/cat "$fixtures/check-runs.count" 2>/dev/null || print 0) + 1 ))
+    print -r -- "$n" > "$fixtures/check-runs.count"
+    while (( n > 1 )) && [[ ! -f "$fixtures/check-runs.$n.json" ]]; do n=$(( n - 1 )); done
+    /bin/cat "$fixtures/check-runs.$n.json" ;;
+  repos/*/actions/runs\?*)
+    /bin/cat "$fixtures/runs.json" ;;
+  repos/*/*)
+    print -r -- '{"default_branch":"main"}' ;;
+  *)
+    print -u2 "fake gh: unexpected endpoint $endpoint"; exit 9 ;;
+esac
+FAKEGH
+/bin/chmod 755 "$gate_dir/bin/gh"
+
+# $1: comparison status, or "" for a commit the API does not know.
+# $2: comma-joined workflow runs on the commit.
+reset_gate() {
+  /bin/rm -rf "$gate_fixtures"
+  /bin/mkdir -p "$gate_fixtures"
+  : > "$gate_fixtures/calls.log"
+  [[ -n "$1" ]] && /usr/bin/printf '{"status":"%s"}' "$1" > "$gate_fixtures/compare.json"
+  /usr/bin/printf '{"workflow_runs":[%s]}' "${2:-}" > "$gate_fixtures/runs.json"
+  serve_check_runs ""
+}
+
+# One argument per poll, each a comma-joined list of check runs.
+serve_check_runs() {
+  local n=1 runs
+  local -a previous=("$gate_fixtures"/check-runs.*(N))
+  (( ${#previous} == 0 )) || /bin/rm -f -- "${previous[@]}"
+  for runs in "$@"; do
+    /usr/bin/printf '{"check_runs":[%s]}' "$runs" > "$gate_fixtures/check-runs.$n.json"
+    n=$(( n + 1 ))
+  done
+}
+
+# id, status, conclusion (JSON: null or "\"success\""), app id
+check_run() {
+  /usr/bin/printf '{"id":%s,"status":"%s","conclusion":%s,"app":{"id":%s},"html_url":"https://example.invalid/%s"}' \
+    "$1" "$2" "$3" "$4" "$1"
+}
+
+ci_run() {
+  /usr/bin/printf '{"path":"%s","status":"%s"}' "$1" "$2"
+}
+
+run_gate() {
+  if gate_output=$(PATH="$gate_dir/bin:$PATH" FAKE_GH_FIXTURES="$gate_fixtures" \
+      "$ROOT_DIR/scripts/release-gate.zsh" hashkode/fixture "$gate_sha" --interval 0 "$@" 2>&1); then
+    gate_status=0
+  else
+    gate_status=$?
+  fi
+}
+
+gate_calls() {
+  /usr/bin/grep -c "$1" "$gate_fixtures/calls.log" || true
+}
+
+# A refusal that must come from the first look. Every case below runs with
+# --timeout 0, where a gate that wrongly waits also ends in exit 1 -- so the
+# exit status alone cannot tell "refused" from "waited and gave up".
+assert_refused_immediately() {
+  local message="$1"
+  assert_equal 1 "$gate_status" "$message"
+  assert_not_contains "$gate_output" "gave up" "$message, without waiting"
+}
+
+typeset -r GATE_ACTIONS=15368
+typeset -r GATE_CI=".github/workflows/ci.yml"
+passed=$(check_run 7 completed '"success"' $GATE_ACTIONS)
+
+reset_gate identical
+serve_check_runs "$passed"
+run_gate --timeout 0
+assert_equal 0 "$gate_status" "the tip of main with a passing ci-required must be releasable"
+assert_contains "$gate_output" "release may proceed" "an allowed release must say so"
+
+reset_gate behind
+serve_check_runs "$passed"
+run_gate --timeout 0
+assert_equal 0 "$gate_status" "an older commit on main with a passing ci-required must be releasable"
+
+# A pull request's head carries a green ci-required too. Ancestry is what
+# refuses it, and it is checked before the check runs are ever read.
+for relation in diverged ahead; do
+  reset_gate "$relation"
+  serve_check_runs "$passed"
+  run_gate --timeout 0
+  assert_refused_immediately "a commit $relation from main must be refused even with a passing ci-required"
+  assert_contains "$gate_output" "is not on main" "a refusal must name the reason"
+  assert_equal 0 "$(gate_calls check-runs)" "check runs must not be read before ancestry is established"
+done
+
+reset_gate ""
+run_gate --timeout 0
+assert_equal 2 "$gate_status" "an unknown commit is an API failure, not a refusal"
+assert_contains "$gate_output" "could not compare" "an API failure must say what failed"
+
+# cancelled matters: cancel-in-progress makes it reachable on every pull request.
+for conclusion in failure cancelled timed_out skipped neutral action_required; do
+  reset_gate identical
+  serve_check_runs "$(check_run 7 completed "\"$conclusion\"" $GATE_ACTIONS)"
+  run_gate --timeout 0
+  assert_refused_immediately "ci-required concluding '$conclusion' must be refused"
+  assert_contains "$gate_output" "concluded '$conclusion'" "the refusal must quote the conclusion"
+done
+
+# The latest run decides, as it does for the required check itself.
+reset_gate identical
+serve_check_runs "$(check_run 5 completed '"success"' $GATE_ACTIONS),$(check_run 9 completed '"failure"' $GATE_ACTIONS)"
+run_gate --timeout 0
+assert_refused_immediately "a failed re-run must override an earlier pass"
+reset_gate identical
+serve_check_runs "$(check_run 9 completed '"success"' $GATE_ACTIONS),$(check_run 5 completed '"failure"' $GATE_ACTIONS)"
+run_gate --timeout 0
+assert_equal 0 "$gate_status" "a passing re-run must override an earlier failure"
+
+# A check run named ci-required from any other integration proves nothing.
+reset_gate identical "$(ci_run $GATE_CI completed)"
+serve_check_runs "$(check_run 7 completed '"success"' 999)"
+run_gate --timeout 0
+assert_refused_immediately "ci-required from another integration must not count"
+assert_contains "$gate_output" "produced no ci-required" "a spoofed check must read as absent"
+
+reset_gate identical "$(ci_run $GATE_CI completed)"
+run_gate --timeout 0
+assert_refused_immediately "a commit whose CI finished without ci-required must be refused"
+assert_contains "$gate_output" "produced no ci-required" "the refusal must say the check is missing"
+
+reset_gate identical
+run_gate --timeout 0 --grace 0
+assert_refused_immediately "a commit CI never ran on must be refused once the grace period is over"
+assert_contains "$gate_output" "CI never ran" "the refusal must say CI never ran"
+
+# Another workflow running on the commit says nothing about CI.
+reset_gate identical "$(ci_run .github/workflows/release.yml in_progress)"
+run_gate --timeout 0 --grace 0
+assert_refused_immediately "only the CI workflow's own run may keep the gate waiting"
+
+reset_gate identical
+run_gate --timeout 0 --grace 600
+assert_equal 1 "$gate_status" "the grace period must keep waiting for CI, then give up at the timeout"
+assert_contains "$gate_output" "waiting for CI to start" "the timeout must say what it was waiting for"
+
+# A tag pushed straight after a merge: CI is creating its jobs, then running
+# ci-required, then done. The gate waits through both and then allows it.
+reset_gate identical "$(ci_run $GATE_CI in_progress)"
+serve_check_runs "" "$(check_run 7 in_progress null $GATE_ACTIONS)" "$passed"
+run_gate --timeout 60
+assert_equal 0 "$gate_status" "the gate must wait for CI still running and then allow the release"
+assert_contains "$gate_output" "waiting for CI on" "the gate must report waiting for the check to appear"
+assert_contains "$gate_output" "which is in_progress" "the gate must report waiting on the running check"
+assert_equal 3 "$(gate_calls check-runs)" "the gate must poll until the check completes"
+
+reset_gate identical
+serve_check_runs "$(check_run 7 in_progress null $GATE_ACTIONS)"
+run_gate --timeout 0
+assert_equal 1 "$gate_status" "a check still running at the timeout must be refused"
+assert_contains "$gate_output" "re-run this workflow" "a timeout must say how to recover"
+
+for bad_arguments in "hashkode/fixture 0123456" "not-a-repo $gate_sha" "hashkode/fixture $gate_sha --bogus 1"; do
+  if PATH="$gate_dir/bin:$PATH" FAKE_GH_FIXTURES="$gate_fixtures" \
+      "$ROOT_DIR/scripts/release-gate.zsh" ${=bad_arguments} >/dev/null 2>&1; then
+    fail "the release gate accepted bad arguments: $bad_arguments"
+  else
+    assert_equal 2 "$?" "bad arguments must be a usage error: $bad_arguments"
+  fi
+done
+
+# The gate trusts ci.yml to define the check it reads, and release.yml to run
+# the gate first and to publish only from a tag.
+gate_required=$(/usr/bin/sed -n 's/^typeset -gr REQUIRED_CHECK="\(.*\)"$/\1/p' "$ROOT_DIR/scripts/release-gate.zsh")
+assert_contains "$(/bin/cat "$ROOT_DIR/.github/workflows/ci.yml")" "name: $gate_required" \
+  "ci.yml must define the job the release gate reads"
+
+release_workflow="$ROOT_DIR/.github/workflows/release.yml"
+workflow_step() {
+  /usr/bin/awk -v want="$2" '
+    /^      - / { if (index(block, want)) printf "%s", block; block = "" }
+    { block = block $0 "\n" }
+    END { if (index(block, want)) printf "%s", block }' "$1"
+}
+# `|| true`: under pipefail a grep that matches nothing would end the suite
+# here without a word, before the check below can say what is missing.
+gate_line=$({ /usr/bin/grep -n 'scripts/release-gate.zsh' "$release_workflow" || true; } | /usr/bin/head -1 | /usr/bin/cut -d: -f1)
+build_line=$({ /usr/bin/grep -n 'run: make all' "$release_workflow" || true; } | /usr/bin/head -1 | /usr/bin/cut -d: -f1)
+[[ -n "$gate_line" && -n "$build_line" ]] || fail "release.yml must run both the release gate and the build"
+(( gate_line < build_line )) || fail "release.yml must run the release gate before it builds anything"
+pass
+assert_contains "$(workflow_step "$release_workflow" release-gate.zsh)" 'GH_TOKEN: ${{ github.token }}' \
+  "the release gate step needs a token to read GitHub"
+for publishing in actions/attest-build-provenance softprops/action-gh-release; do
+  assert_contains "$(workflow_step "$release_workflow" "$publishing")" \
+    "if: startsWith(github.ref, 'refs/tags/v')" \
+    "$publishing must run only for a tag, never for a rehearsal"
+done
+for permission in 'checks: read' 'actions: read'; do
+  assert_contains "$(/bin/cat "$release_workflow")" "$permission" "release.yml needs $permission for the release gate"
+done
 
 /usr/bin/printf 'All %d checks passed.\n' "$checks"

@@ -89,3 +89,14 @@ and whether an active profile selects an operation mode.
   `ls /Library/LaunchDaemons /Library/LaunchAgents ~/Library/LaunchAgents /Library/PrivilegedHelperTools; sudo ls /etc/sudoers.d`
 - Note that removing the workflow does not delete its cache directory; delete it
   manually (see README → Uninstall).
+
+## Tagging
+
+- Tag the tip of `main` once its CI has finished. The release workflow refuses
+  a commit that is not on `main` or has no passing `ci-required` run, and CI
+  runs only on the tip of a merged stack, so its intermediate commits cannot be
+  released.
+- To rehearse without spending a tag, run
+  `gh workflow run release.yml --ref main`. It runs the gate, the build and the
+  package check, and stops before the attestation and the release. A `v*` tag
+  cannot be moved or deleted once pushed.

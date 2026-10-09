@@ -158,6 +158,15 @@ behaviour in a minor release.
   its build-provenance attestation. Dependabot keeps the pins current.
 - Update `actions/attest-build-provenance` from v2 to v4.2.2 as part of the
   pinning pass.
+- Refuse to release a commit that has not passed the merge gate. Before
+  building, the release workflow now checks that the tagged commit is on
+  `main` and that its latest `ci-required` run from GitHub Actions succeeded,
+  waiting up to ten minutes for CI still running on it. Previously a tag, which
+  an administrator can point at any commit, was built, attested and published
+  with only the unit tests run: `v0.2.0`'s commit, re-cut during the history
+  rewrite, never passed CI at all. The workflow can also be run by hand as a
+  rehearsal that stops before attesting or publishing. Reasoning and
+  measurements: `docs/decisions/release-gate.md`.
 
 ## 0.2.0 — 2026-08-18
 
