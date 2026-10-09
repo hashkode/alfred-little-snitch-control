@@ -3,25 +3,42 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+  # A rehearsal of the release path against any ref: the gate, the build and
+  # the package check, but never the attestation or the release. A v* tag is
+  # permanent here (release-tag-immutability has no bypass), so this is how the
+  # path is exercised without spending one.
+  workflow_dispatch:
 
 permissions:
   contents: write
   id-token: write
   attestations: write
+  # The release gate reads the commit's check runs and its CI workflow runs.
+  checks: read
+  actions: read
 
 jobs:
   release:
     name: Build and publish
     runs-on: macos-latest
-    timeout-minutes: 15
+    # The release gate waits up to 10 minutes for CI still running on the commit.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Before anything is built: the commit must be on main and must already
+      # have passed ci-required, the check every merge to main requires.
+      - name: Commit is on main and passed ci-required
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/release-gate.zsh "$GITHUB_REPOSITORY" "$GITHUB_SHA"
 
       # Fail before building if the tag, info.plist and CHANGELOG disagree.
       - name: Tag matches the source tree
         run: |
           version=$(/usr/libexec/PlistBuddy -c 'Print :version' workflow/info.plist)
-          if [ "refs/tags/v$version" != "$GITHUB_REF" ]; then
+          # A rehearsal runs from a branch, so there is no tag to compare.
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "refs/tags/v$version" != "$GITHUB_REF" ]; then
             echo "Tag $GITHUB_REF does not match info.plist version $version" >&2
             exit 1
           fi
@@ -34,10 +51,12 @@ jobs:
         run: make all
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           subject-path: dist/*.alfredworkflow
 
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: |
             dist/*.alfredworkflow
