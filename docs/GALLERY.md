@@ -40,7 +40,7 @@ root even to read its current state.
 ## Usage
 
 Switch Little Snitch's operation mode and network filter via the `snitch`
-keyword, then <kbd>Tab</kbd> to enter the workflow.
+keyword, followed by a <kbd>Space</kbd>.
 
 ![Little Snitch Control](images/menu.png)
 
