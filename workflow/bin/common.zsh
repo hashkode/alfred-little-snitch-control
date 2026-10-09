@@ -22,7 +22,7 @@ typeset -gr LSCTL_BUNDLE_ID="com.hashkode.alfred.little-snitch-control"
 # which fails closed on values it does not recognise.
 typeset -gr LSCTL_SUPPORTED_MAJOR="6"
 typeset -gr LSCTL_MINIMUM_MINOR="2"
-typeset -gr LSCTL_TESTED_MAX_MINOR="4"
+typeset -gr LSCTL_TESTED_MAX_MINOR="5"
 
 typeset -g LSCTL_STATE_MODE=""
 typeset -g LSCTL_STATE_FILTER=""

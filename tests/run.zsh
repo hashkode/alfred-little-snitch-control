@@ -185,12 +185,36 @@ for two_component in 6.2 6.3 6.4; do
 done
 
 # Newer-than-tested must be a label, never a refusal.
-lsctl_is_untested_version "6.5" || fail "6.5 should be flagged as untested"
+lsctl_is_untested_version "6.$(( LSCTL_TESTED_MAX_MINOR + 1 ))" || \
+  fail "the release after the tested ceiling should be flagged as untested"
 pass
-if lsctl_is_untested_version "6.4.1"; then
-  fail "6.4.1 is tested and must not be flagged"
-fi
+for tested in "6.$LSCTL_TESTED_MAX_MINOR" 6.4.1; do
+  if lsctl_is_untested_version "$tested"; then
+    fail "$tested is within the tested ceiling and must not be flagged"
+  fi
+  pass
+done
+
+# "Tested" means the operation-mode mapping was verified on that release, so
+# the ceiling and the docs that name the verified version must follow the
+# report scripts/verify-modes.zsh writes. Raising the ceiling without
+# re-verifying, or re-verifying without updating them, is how they drifted.
+verified_release=$(/usr/bin/sed -n 's/^- Little Snitch: //p' "$ROOT_DIR/docs/VERIFIED-MODES.md")
+lsctl_is_version "$verified_release" || fail "docs/VERIFIED-MODES.md names no Little Snitch version"
 pass
+assert_equal "$(lsctl_version_minor "$verified_release")" "$LSCTL_TESTED_MAX_MINOR" \
+  "the tested ceiling must be the minor release docs/VERIFIED-MODES.md verified"
+# Every such claim, not just one: README makes it twice, and a stale copy next
+# to a current one would otherwise pass.
+for document in README.md SECURITY.md; do
+  claims=$(/usr/bin/grep -oE '(Verified against|confirmed against|confirmed on) Little Snitch [0-9][0-9.]*[0-9]' \
+    "$ROOT_DIR/$document" || true)
+  [[ -n "$claims" ]] || fail "$document no longer names the release the mode mapping was verified on"
+  pass
+  while IFS= read -r claim; do
+    assert_equal "$verified_release" "${claim##*Little Snitch }" "$document: '$claim' must name the verified release"
+  done <<< "$claims"
+done
 
 for output_probe in "Version 6.4.1:6.4.1" "Version 6.4:6.4" "Version 6.4.1 (7212):6.4.1"; do
   assert_equal "${output_probe##*:}" "$(lsctl_version_from_output "${output_probe%%:*}")" \
