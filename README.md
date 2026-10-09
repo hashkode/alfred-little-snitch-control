@@ -50,7 +50,7 @@ to read a value.
 If that trade is not one you want to make, use Little Snitch's own menu bar
 item instead. See [SECURITY.md](SECURITY.md) for the full threat model.
 
-Verified against Little Snitch 6.4.1 on macOS 26 (Apple silicon). Newer 6.x
+Verified against Little Snitch 6.5 on macOS 26 (Apple silicon). Newer 6.x
 releases are accepted and labelled "untested" in the status row rather than
 refused. Little Snitch 5 and earlier are refused.
 
@@ -156,7 +156,7 @@ preferences:
 > established by observation. They can change in any Little Snitch update
 > without notice. This is why every action reads the state back and reports what
 > Little Snitch actually says rather than what was requested. The mapping above
-> was confirmed against Little Snitch 6.4.1 — see
+> was confirmed against Little Snitch 6.5 — see
 > [docs/VERIFIED-MODES.md](docs/VERIFIED-MODES.md) — and is re-checked before
 > each release with `scripts/verify-modes.zsh`.
 

@@ -4,10 +4,13 @@ All notable changes to this project are documented here. Versions follow
 [semantic versioning](https://semver.org/); releases before 1.0 may change
 behaviour in a minor release.
 
-## Unreleased
+## 0.3.0 — 2026-10-09
 
 ### Changed
 
+- Treat Little Snitch 6.5 as tested. Its operation-mode mapping was
+  re-verified with `scripts/verify-modes.zsh`, so the status row no longer
+  labels it "untested".
 - Exclude the Alfred forum from the weekly link check. It serves a bot
   challenge to every non-browser client, so the check failed on every run
   whether or not the link worked, and a check that is always red hides the
