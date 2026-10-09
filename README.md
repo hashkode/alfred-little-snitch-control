@@ -90,10 +90,11 @@ The keyword is configurable in the workflow's configuration in Alfred.
 
 ## Usage
 
-Type `snitch` (default keyword), then <kbd>Tab</kbd> or <kbd>Space</kbd> to
-enter the workflow, and choose an action. Without that keystroke Alfred is still
-in its normal search, so it may rank its own results — including Little Snitch
-itself — above the workflow's rows.
+Type `snitch` (default keyword) followed by a <kbd>Space</kbd> to enter the
+workflow, and choose an action. Without the space Alfred is still in its normal
+search, so it may rank its own results — including Little Snitch itself — above
+the workflow's rows. <kbd>Tab</kbd> does not help: it autocompletes whichever row
+is highlighted, which can be the Little Snitch app.
 
 The list shows the last verified state:
 

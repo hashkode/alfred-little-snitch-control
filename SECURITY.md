@@ -90,9 +90,11 @@ turn the switch back off yourself.
   compromised bundle: they are emitted by the very file such an attacker
   rewrites. They defend against a replaced or damaged **Little Snitch**, which
   is a different and real problem.
-- **The authorization grace period.** macOS may briefly reuse a successful
-  authorization. A modified script gets its own prompt, but that prompt looks
-  identical to the legitimate one.
+- **The authorization grace period.** macOS documents a short period in which
+  an authorized script is not asked again. Tested on macOS 26.7.1, every action
+  prompted, including identical Refreshes in quick succession; another macOS
+  release may reuse an authorization. A modified script gets its own prompt, and
+  that prompt looks identical to the legitimate one.
 - **Drift.** The displayed state is a last-verified cache, not a live assertion.
   Little Snitch, an active profile, another administrator, or another process
   may change the actual state at any time.

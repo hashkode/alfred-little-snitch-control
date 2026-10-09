@@ -154,6 +154,10 @@ done
 
 assert_equal "true" "$(plist_value ':objects:0:config:skipuniversalaction')" \
   "the firewall keyword must not be offered as a universal action"
+# The README and the import text tell users to type a space after the keyword.
+# That only enters the workflow because the keyword is configured to require one.
+assert_equal "true" "$(plist_value ':objects:0:config:withspace')" \
+  "the keyword must require a space, which is what the docs tell users to type"
 assert_equal "0" "$(plist_value ':objects:0:config:alfredfiltersresultsmatchmode')" \
   "result matching should be exact-from-start, not loose word matching"
 assert_equal "Little Snitch Control" "$(plist_value ':objects:2:config:title')" \

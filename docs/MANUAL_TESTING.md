@@ -27,8 +27,9 @@ and whether an active profile selects an operation mode.
   values against Little Snitch.
 - Cancel the authorization dialog; confirm the previous verified state is
   unchanged and the notification says nothing was changed.
-- Note whether a second action within five minutes re-prompts. macOS may reuse a
-  successful authorization; the README should match observed behaviour.
+- Note whether a second action within five minutes re-prompts. On macOS 26.7.1
+  every action prompted; if a release behaves differently, update README.md and
+  SECURITY.md to match.
 
 ## Modes
 
@@ -61,19 +62,26 @@ and whether an active profile selects an operation mode.
   most likely to slip through.
 - `kill -9` an action while its authorization dialog is open, then confirm the
   next invocation is not blocked by the abandoned lock. There is no dead-owner
-  recovery to exercise: the kernel drops an fcntl lock when the holder dies.
-- Terminate an action with `kill` (not `kill -9`) while its dialog is open and
-  confirm no second authorization dialog appears, then check with `pgrep -f
-  authorize.applescript` that no orphaned `osascript` survives. A signal aimed
-  at `bin/action` alone leaves an already-authorised child running: the lock is
-  released, but the privileged call is still in flight.
+  recovery to exercise: the kernel drops an fcntl lock when the holder dies. The
+  dialog stays open, because its `osascript` child is orphaned rather than
+  killed, so cancel it. The killed action's `.osascript.*` file stays in the
+  cache directory: no handler runs on SIGKILL.
+- Terminate an action with `kill` (not `kill -9`) while its dialog is open.
+  Confirm the action exits, the lock is released and no second dialog appears.
+  The `osascript` child survives with its dialog open (`pgrep -f
+  authorize.applescript`); approved later, it would run the privileged command
+  with nothing reporting the result. Cancel it. Tracked by #47.
 - Upgrading from 0.2.x: leave a leftover `action.lock` **directory** in the
   workflow's cache directory and confirm the first action replaces it instead
   of reporting "Another Little Snitch action is still running".
-- Trigger two actions from two separate Alfred invocations while a dialog is
-  open, and confirm the second is refused as already running. (Alfred's own
-  `concurrently: false` serialises a single invocation, so one window is not
-  enough to exercise the lock.)
+- With an action's dialog open, start a second action from Terminal and confirm
+  it is refused as already running, without a second dialog:
+  `alfred_workflow_cache="$HOME/Library/Caches/com.runningwithcrayons.Alfred/Workflow Data/com.hashkode.alfred.little-snitch-control" <bundle>/bin/action refresh`,
+  where `<bundle>` is the installed workflow (Alfred → Workflows → right-click →
+  Open in Finder). It cannot be done through Alfred: Secure Input blocks Alfred's
+  hotkey while the password field has focus, and `concurrently: false` queues a
+  second invocation rather than starting it. The queued run starts, with its own
+  prompt, once the first finishes.
 - Change Little Snitch outside Alfred; confirm the cached state stays labelled
   "Last verified" until Refresh.
 - Edit the cached version and confirm the status goes Unknown with an

@@ -11,6 +11,11 @@ behaviour in a minor release.
 - Treat Little Snitch 6.5 as tested. Its operation-mode mapping was
   re-verified with `scripts/verify-modes.zsh`, so the status row no longer
   labels it "untested".
+- Tell users to type a space after the keyword, not to press Tab. Tab
+  autocompletes whichever row Alfred highlights, which can be the Little Snitch
+  app itself; the space enters the workflow because its keyword requires one.
+  Corrected in the README and in the text Alfred shows when importing the
+  workflow.
 - Exclude the Alfred forum from the weekly link check. It serves a bot
   challenge to every non-browser client, so the check failed on every run
   whether or not the link worked, and a check that is always red hides the
