@@ -36,11 +36,15 @@ version=$(/usr/libexec/PlistBuddy -c 'Print :version' "$WORKFLOW_DIR/info.plist"
 # contents, info.plist included, do not change, so a candidate built from the
 # release commit before it is tagged is byte-identical to the published asset.
 #
-# `git tag --points-at` rather than `git describe`: describe ignores
-# lightweight tags, and a CI checkout of a tag can create one. Without git, as
-# in a source tarball, nothing shows which commit this is, so the build is a
-# development build. That includes a tarball unpacked inside some other
-# repository, where git would otherwise answer for the enclosing one.
+# `git tag --points-at HEAD --list v<version>` asks exactly whether this
+# version's tag is on HEAD, annotated or lightweight. `git describe
+# --exact-match` names a single tag, and with several on HEAD it can name
+# another one: with v0.3.1, a-other and nightly on one commit it answered
+# "nightly", which would have turned a release build into a development build.
+#
+# Without git, as in a source tarball, nothing shows which commit this is, so
+# the build is a development build. That includes a tarball unpacked inside
+# some other repository, where git would otherwise answer for the enclosing one.
 build_suffix() {
   local head="" changes="" toplevel=""
   toplevel=$(/usr/bin/git -C "$ROOT_DIR" rev-parse --show-toplevel 2>/dev/null) || toplevel=""
