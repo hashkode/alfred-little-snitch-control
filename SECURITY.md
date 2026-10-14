@@ -68,10 +68,13 @@ turn the switch back off yourself.
   (`zsystem flock`, an fcntl record lock) held by the process until it exits or
   closes the file. The kernel releases it even on `SIGKILL`, so there is no
   stale-owner state to detect and no window in which two processes can each
-  conclude the other's lock is dead. A signal delivered to `bin/action` alone
-  still leaves an already-authorised `osascript` child running to completion;
-  the lock does not survive that, so this is a bound on concurrency, not a
-  guarantee that no privileged call is in flight.
+  conclude the other's lock is dead. A signal delivered to `bin/action` while
+  its password dialog is open stops the `osascript` child and closes the
+  dialog. `SIGKILL` cannot be handled: that dialog stays open until the next
+  action stops it. Once authorised, the privileged shell runs under
+  `security_authtrampoline` rather than `osascript` and finishes even after
+  the lock is gone, so this is a bound on concurrency, not a guarantee that no
+  privileged call is in flight.
 - **Misreported outcomes.** Both preferences are read back after every action
   and must be literally `0`, `1`, `2` and `true`, `false`. If the observed state
   disagrees with the requested one, the workflow says so rather than claiming

@@ -337,6 +337,39 @@ lsctl_release_lock() {
   return 0
 }
 
+# bin/action runs osascript in the background and stops it from its signal
+# handlers, which closes a pending password dialog. SIGKILL runs no handler, so
+# the child outlives its parent with the dialog still open; approved later, it
+# would run the privileged command with no lock held and nothing reporting the
+# result. bin/action records the child's PID, and the next action stops it.
+#
+# The caller must hold the action lock. Then no live action owns an
+# authorizer, and anything recorded is an orphan. The PID is signalled only
+# while it still runs the expected command, so a reused PID is left alone.
+# An already-authorised root shell runs under security_authtrampoline, not
+# under osascript, and is not stopped by this.
+lsctl_stop_orphaned_authorizer() {
+  local pid_file="$1" expected_command="$2"
+  local pid="" running_command
+
+  [[ -f "$pid_file" && ! -L "$pid_file" ]] || return 0
+  IFS= read -r pid < "$pid_file" 2>/dev/null || true
+  /bin/rm -f -- "$pid_file" 2>/dev/null || true
+
+  [[ "$pid" == <-> && ${#pid} -le 10 ]] || return 0
+  running_command=$(/bin/ps -o command= -p "$pid" 2>/dev/null) || return 0
+  [[ "$running_command" == "$expected_command "* ]] || return 0
+  /bin/kill -TERM "$pid" 2>/dev/null || true
+}
+
+# Temporary files an action killed with SIGKILL left behind. The caller must
+# hold the action lock, so none of them belongs to a running action.
+lsctl_remove_authorizer_files() {
+  local cache_dir="$1"
+  [[ -n "$cache_dir" ]] || return 0
+  /bin/rm -f -- "$cache_dir"/.osascript.*(N) 2>/dev/null || true
+}
+
 lsctl_mode_label() {
   case "$1" in
     0) print -r -- "Alert Mode" ;;

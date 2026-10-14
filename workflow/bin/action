@@ -157,21 +157,54 @@ release_lock() {
 trap 'release_lock; report_silent_exit' EXIT
 trap 'release_lock; exit 1' INT TERM HUP
 
+# A previous action killed with SIGKILL could not stop its osascript child, and
+# that child's password dialog may still be open. Holding the lock means
+# nothing recorded here belongs to a running action.
+authorizer_pid_file="$cache_dir/authorizer.pid"
+lsctl_stop_orphaned_authorizer "$authorizer_pid_file" "/usr/bin/osascript $SCRIPT_DIR/authorize.applescript"
+lsctl_remove_authorizer_files "$cache_dir"
+
 # Keep the two streams apart. osascript and the AppleScript host emit their own
 # warnings on stderr (dyld, CFPrefs, deprecated scripting additions); folding
 # those into stdout would make a *successful* firewall change parse as an
 # unexpected status and report failure to the user.
 authorization_errors=$(/usr/bin/mktemp "$cache_dir/.osascript.XXXXXX") || \
   fail "Could not create a temporary file for the authorization step."
-remove_error_file() {
-  /bin/rm -f "$authorization_errors" 2>/dev/null || true
+authorization_result=$(/usr/bin/mktemp "$cache_dir/.osascript.XXXXXX") || {
+  /bin/rm -f "$authorization_errors"
+  fail "Could not create a temporary file for the authorization step."
+}
+
+# osascript runs in the background so the signal handlers can stop it. Killed
+# while its password dialog is open, it takes the dialog with it; left running,
+# it could be approved after this action had released the lock and reported
+# nothing. Once authorised, the root shell runs under security_authtrampoline
+# and finishes regardless (see SECURITY.md).
+typeset -g authorizer_pid=""
+stop_authorizer() {
+  [[ -n "$authorizer_pid" ]] || return 0
+  /bin/kill -TERM "$authorizer_pid" 2>/dev/null || true
+  authorizer_pid=""
+}
+finish_authorization() {
+  stop_authorizer
+  /bin/rm -f "$authorization_errors" "$authorization_result" "$authorizer_pid_file" 2>/dev/null || true
   release_lock
 }
-trap 'remove_error_file; report_silent_exit' EXIT
-trap 'remove_error_file; exit 1' INT TERM HUP
+trap 'finish_authorization; report_silent_exit' EXIT
+trap 'finish_authorization; exit 1' INT TERM HUP
 
-authorization_output=$(/usr/bin/osascript "$SCRIPT_DIR/authorize.applescript" "$action_id" 2>"$authorization_errors")
+/usr/bin/osascript "$SCRIPT_DIR/authorize.applescript" "$action_id" \
+  >"$authorization_result" 2>"$authorization_errors" </dev/null &
+authorizer_pid=$!
+/usr/bin/printf '%s\n' "$authorizer_pid" >"$authorizer_pid_file" 2>/dev/null || true
+wait "$authorizer_pid"
 authorization_status=$?
+# Cleared before anything else can run stop_authorizer, so a PID the system
+# has reused is never signalled.
+authorizer_pid=""
+/bin/rm -f "$authorizer_pid_file" 2>/dev/null || true
+authorization_output="$(/bin/cat "$authorization_result")"
 authorization_message="$(/bin/cat "$authorization_errors")"
 
 if (( authorization_status != 0 )); then

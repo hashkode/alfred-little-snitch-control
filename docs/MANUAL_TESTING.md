@@ -60,17 +60,17 @@ and whether an active profile selects an operation mode.
   `Version 6.9`, confirm each is refused or accepted as documented — 6.2/6.4
   (no patch component) and a newer-than-tested minor are the two regressions
   most likely to slip through.
-- `kill -9` an action while its authorization dialog is open, then confirm the
-  next invocation is not blocked by the abandoned lock. There is no dead-owner
-  recovery to exercise: the kernel drops an fcntl lock when the holder dies. The
-  dialog stays open, because its `osascript` child is orphaned rather than
-  killed, so cancel it. The killed action's `.osascript.*` file stays in the
-  cache directory: no handler runs on SIGKILL.
 - Terminate an action with `kill` (not `kill -9`) while its dialog is open.
-  Confirm the action exits, the lock is released and no second dialog appears.
-  The `osascript` child survives with its dialog open (`pgrep -f
-  authorize.applescript`); approved later, it would run the privileged command
-  with nothing reporting the result. Cancel it. Tracked by #47.
+  Confirm the dialog closes, the action exits, `pgrep -f authorize.applescript`
+  finds nothing, the lock is released, and the cache directory holds no
+  `.osascript.*` file and no `authorizer.pid`.
+- `kill -9` an action while its authorization dialog is open. No handler runs
+  on SIGKILL, so the dialog stays open and `authorizer.pid` plus two
+  `.osascript.*` files stay in the cache directory. Leave the dialog alone and
+  start the next action: confirm the old dialog closes before the new one
+  appears, that the new action is not blocked by the abandoned lock (the kernel
+  drops an fcntl lock when its holder dies), and that the leftovers are gone
+  once it finishes.
 - Upgrading from 0.2.x: leave a leftover `action.lock` **directory** in the
   workflow's cache directory and confirm the first action replaces it instead
   of reporting "Another Little Snitch action is still running".
