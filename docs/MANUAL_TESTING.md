@@ -107,6 +107,8 @@ and whether an active profile selects an operation mode.
   runs only on the tip of a merged stack, so its intermediate commits cannot be
   released.
 - To rehearse without spending a tag, run
-  `gh workflow run release.yml --ref main`. It runs the gate, the build and the
-  package check, and stops before the attestation and the release. A `v*` tag
-  cannot be moved or deleted once pushed.
+  `gh workflow run release.yml --ref main`. It runs the gate, the notes
+  extraction, the build and the package check, hands the archive to the
+  publish job, which re-verifies its checksum, and stops before the
+  attestation and the release. A `v*` tag cannot be moved or deleted once
+  pushed.
