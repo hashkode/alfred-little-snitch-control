@@ -142,7 +142,26 @@ recorded in [docs/VERIFIED-MODES.md](docs/VERIFIED-MODES.md).
 
 ## Verifying what you install
 
-The release archive is byte-reproducible: building a release tag with
-`make build` produces the same SHA-256 as the published asset. Verify the
-checksum published with the release before importing, and prefer building from a
-tag you have reviewed.
+Each release carries three things, and they prove different things:
+
+- **The `.sha256` file** detects a damaged download. It does not detect a
+  replaced one: the same job uploads it next to the archive, so whoever can
+  replace the archive can replace the checksum.
+- **The build-provenance attestation** ties the archive's exact bytes to this
+  repository, `.github/workflows/release.yml` and the tagged commit. It is
+  signed with a short-lived certificate GitHub issues to that workflow run and
+  is recorded in a public transparency log, so an asset uploaded by any other
+  means fails it. It does not vouch for the source: anyone able to change the
+  release workflow or push a release tag can produce a valid one.
+
+  ```sh
+  gh attestation verify Little-Snitch-Control-*.alfredworkflow \
+    --repo hashkode/alfred-little-snitch-control
+  ```
+
+  On a terminal it prints `✓ Verification succeeded!` and the build workflow;
+  without one it prints nothing, so check the exit status or add
+  `--format json`. A modified archive exits 1.
+- **Reproducibility** lets you check the source as well: the archive is
+  byte-reproducible, so building the release tag with `make build` produces
+  the published SHA-256. Prefer building from a tag you have reviewed.

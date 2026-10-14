@@ -66,6 +66,11 @@ zsh, two-space indentation, absolute paths for every external binary
 (`/usr/bin/stat`, `/bin/mkdir`, …), no `eval`, and `#!/bin/zsh -f` on every
 entry point so a user's startup files cannot change behaviour.
 
+Shipping zsh rather than a compiled binary is a deliberate exception to
+shell-for-repo-scripts-only; the reasons, and when to revisit it, are in
+[docs/decisions/zsh-not-compiled.md](docs/decisions/zsh-not-compiled.md). No
+linter covers zsh, so `tests/run.zsh` syntax-checks every zsh file.
+
 ## Security issues
 
 Do not open a public issue for a security problem — see [SECURITY.md](SECURITY.md).

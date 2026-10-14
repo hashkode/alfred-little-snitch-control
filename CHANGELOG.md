@@ -24,6 +24,18 @@ behaviour in a minor release.
   release-tag build still reproduces the published v0.3.0 checksum, and a
   candidate built before tagging has the same bytes as the release.
 
+### Added
+
+- Document how to verify a release's build-provenance attestation with
+  `gh attestation verify`, in the README's install steps and in SECURITY.md,
+  which now says what the checksum, the attestation and a reproducible build
+  each prove. Every release since 0.2.0 has been attested, but only the
+  checksum was documented, and it is the weaker of the two: it is uploaded by
+  the same job as the archive, so it detects damage, not replacement.
+- Record why the workflow ships zsh rather than a compiled binary
+  (`docs/decisions/zsh-not-compiled.md`). The Alfred Gallery requires
+  compiled binaries to be signed and notarised and exempts scripts.
+
 ### Changed
 
 - Drop the `category` key from `info.plist`. Alfred discards it on import, so
@@ -34,6 +46,8 @@ behaviour in a minor release.
 - Name the keyword in the import text as the default (`snitch by default`).
   The text cannot follow a renamed keyword, and it used to read as if
   `snitch` were the only one.
+- Say "followed by a space" in the README's setup steps too. 0.3.0 corrected
+  the usage section but left the first-run step without it.
 
 ### Tests
 
