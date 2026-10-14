@@ -181,11 +181,6 @@ lsctl_version_minor() {
   print -r -- "$minor"
 }
 
-# True only for the exact payload the privileged script is permitted to return.
-# Matching the whole shape rejects CR, LF, whitespace, extra fields and
-# out-of-range values in one predicate. `do shell script` hands its result back
-# as AppleScript text, in which a line break arrives as CR, so screening for a
-# literal newline could never have caught a multi-line payload.
 # Every action identifier bin/menu may emit and bin/action must accept. Both
 # sides read this one list, and tests/run.zsh asserts the rendered menu uses
 # nothing outside it and leaves nothing in it unreachable. Asserting the two
@@ -207,8 +202,51 @@ lsctl_is_action() {
   (( ${LSCTL_ACTIONS[(Ie)$1]} ))
 }
 
+# True only for the exact payload the privileged script is permitted to return.
+# Matching the whole shape rejects CR, LF, whitespace, extra fields and
+# out-of-range values in one predicate. `do shell script` hands its result back
+# as AppleScript text, in which a line break arrives as CR, so screening for a
+# literal newline could never have caught a multi-line payload.
 lsctl_is_readback() {
   [[ "$1" == (0|1|2)"|"(true|false) ]]
+}
+
+# True when a verified readback shows the state the action asked for. This is
+# the only defence against reporting a firewall change that did not happen, so
+# it fails closed: an action it does not know is never confirmed. Refresh asks
+# for no particular state.
+lsctl_confirms_expectation() {
+  local action_id="$1" mode="$2" filter="$3"
+  case "$action_id" in
+    refresh) return 0 ;;
+    mode.alert) [[ "$mode" == "0" ]] ;;
+    mode.silent-allow) [[ "$mode" == "1" ]] ;;
+    mode.silent-deny) [[ "$mode" == "2" ]] ;;
+    filter.enable) [[ "$filter" == "true" ]] ;;
+    filter.disable) [[ "$filter" == "false" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+# Names the reason the privileged step failed, from what osascript printed on
+# stderr: cancelled, integrity, version, terminal-access or rejected. The
+# number in parentheses is the AppleScript error number, which stays the same
+# when macOS is localised; the English phrases are fallbacks. Cancel is checked
+# first, so a cancelled prompt is never reported as a failure.
+lsctl_classify_authorization_error() {
+  local message="$1"
+  if [[ "$message" == *"(-128)"* || "$message" == *"User canceled"* ]]; then
+    print -r -- "cancelled"
+  elif [[ "$message" == *"(77)"* || "$message" == *"status 77"* ]]; then
+    print -r -- "integrity"
+  elif [[ "$message" == *"(78)"* || "$message" == *"status 78"* ]]; then
+    print -r -- "version"
+  elif [[ "$message" == *"Terminal"* || "$message" == *"not authorized"* || \
+          "$message" == *"Preferences"*"Security"* ]]; then
+    print -r -- "terminal-access"
+  else
+    print -r -- "rejected"
+  fi
 }
 
 lsctl_is_supported_version() {

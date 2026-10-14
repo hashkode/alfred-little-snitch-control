@@ -4,6 +4,19 @@ All notable changes to this project are documented here. Versions follow
 [semantic versioning](https://semver.org/); releases before 1.0 may change
 behaviour in a minor release.
 
+## Unreleased
+
+### Tests
+
+- Test the two decisions made after the administrator prompt. How a failed
+  prompt is reported (cancelled, integrity check, unsupported version, missing
+  Terminal access, or refused) and whether the readback confirms the requested
+  change were inline in `bin/action` with no test. The confirmation is the only
+  check between Little Snitch's answer and a banner saying the firewall
+  changed. Both now live in `common.zsh`, tested against every action and
+  every state, and against the values the privileged script writes. An action
+  with no expected state is now refused rather than passed.
+
 ## 0.3.0 — 2026-10-09
 
 ### Changed
