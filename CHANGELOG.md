@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Versions follow
 [semantic versioning](https://semver.org/); releases before 1.0 may change
 behaviour in a minor release.
 
-## Unreleased
+## 0.3.1 — 2026-10-14
 
 ### Fixed
 
