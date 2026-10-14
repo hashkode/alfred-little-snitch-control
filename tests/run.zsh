@@ -169,6 +169,16 @@ assert_equal "Little Snitch Control" "$(plist_value ':objects:2:config:title')" 
   "notifications must be attributable to this workflow, not to Little Snitch"
 assert_contains "$(plist_value ':webaddress')" "github.com" "webaddress should point at the project"
 
+# The attestation command users are told to run must name this repository, or
+# it fails for every user the day the repository moves.
+project_repository="${$(plist_value ':webaddress')#https://github.com/}"
+for document in README.md SECURITY.md; do
+  assert_contains "$(<"$ROOT_DIR/$document")" "gh attestation verify Little-Snitch-Control-*.alfredworkflow \\
+" "$document must show the attestation command"
+  assert_contains "$(<"$ROOT_DIR/$document")" "--repo $project_repository" \
+    "$document's attestation command must name the repository info.plist points at"
+done
+
 # Alfred rewrites info.plist on import and drops top-level keys it does not
 # know. A key it drops makes the repository and every installed copy disagree:
 # `category` did. These are the keys Alfred 5 kept when it imported the 0.3.0

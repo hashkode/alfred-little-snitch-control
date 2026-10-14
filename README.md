@@ -67,7 +67,23 @@ refused. Little Snitch 5 and earlier are refused.
    Run it in the download folder with both files present. `tests/package.zsh`
    fails the release if this command ever names a stale version.
 
-3. Open the file to install it in Alfred.
+3. Verify where it was built, if you have the
+   [GitHub CLI](https://cli.github.com/):
+
+   ```sh
+   gh attestation verify Little-Snitch-Control-*.alfredworkflow \
+     --repo hashkode/alfred-little-snitch-control
+   ```
+
+   It should end with `✓ Verification succeeded!` and name
+   `.github/workflows/release.yml` at the release tag as the build workflow. The
+   checksum only catches a damaged download, because it is published next to
+   the archive by the same job. The attestation is signed with a certificate
+   GitHub issues to the release workflow's run and is recorded in a public
+   transparency log. It ties these exact bytes to this repository, its release
+   workflow and the tagged commit, so an asset uploaded any other way fails it.
+
+4. Open the file to install it in Alfred.
 
 Or build it yourself: check out the release tag and run `make build`. The
 archive is byte-reproducible, so a build of the release tag produces the same
@@ -79,7 +95,7 @@ with uncommitted changes, is named `Little-Snitch-Control-v<version>+g<commit>`
 
 1. In Little Snitch, open **Settings → Security**.
 2. Unlock the settings and enable **Allow access via Terminal**.
-3. Type `snitch` in Alfred and choose **Refresh Status**.
+3. Type `snitch` followed by a space in Alfred and choose **Refresh Status**.
 4. Approve the macOS administrator dialog.
 
 > [!IMPORTANT]
