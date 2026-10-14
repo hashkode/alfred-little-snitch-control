@@ -15,6 +15,14 @@ behaviour in a minor release.
   in the background and the signal handlers stop it. `SIGKILL` cannot be
   handled, so the next action stops a dialog its predecessor left open and
   removes that run's temporary files.
+- Name a build for what it is. A build of any commit but the one tagged
+  `v<version>`, or of a tree with uncommitted changes, used to carry the
+  release's exact name with different bytes, which a user checking the
+  published checksum could not tell from a tampered release. Such builds are
+  now named `Little-Snitch-Control-v<version>+g<commit>` (`.dirty` for
+  changes, `+dev` outside a git checkout). Only the file name changes: a
+  release-tag build still reproduces the published v0.3.0 checksum, and a
+  candidate built before tagging has the same bytes as the release.
 
 ### Changed
 

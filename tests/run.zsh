@@ -1303,4 +1303,17 @@ for permission in 'checks: read' 'actions: read'; do
   assert_contains "$(/bin/cat "$release_workflow")" "$permission" "release.yml needs $permission for the release gate"
 done
 
+# A tag build must produce the release-shaped name before anything attests or
+# publishes it; otherwise a development-named asset would ship.
+name_step=$(workflow_step "$release_workflow" "Archive is named for the tag")
+assert_contains "$name_step" 'test -f "dist/Little-Snitch-Control-${GITHUB_REF_NAME}.alfredworkflow"' \
+  "release.yml must check the archive is named for the tag"
+assert_contains "$name_step" "if: github.ref_type == 'tag'" \
+  "the archive name check applies to tag builds; a rehearsal builds a development archive"
+name_line=$({ /usr/bin/grep -n 'Archive is named for the tag' "$release_workflow" || true; } | /usr/bin/head -1 | /usr/bin/cut -d: -f1)
+attest_line=$({ /usr/bin/grep -n 'actions/attest-build-provenance' "$release_workflow" || true; } | /usr/bin/head -1 | /usr/bin/cut -d: -f1)
+[[ -n "$name_line" && -n "$attest_line" ]] && (( build_line < name_line && name_line < attest_line )) || \
+  fail "release.yml must check the archive name after building and before attesting"
+pass
+
 /usr/bin/printf 'All %d checks passed.\n' "$checks"

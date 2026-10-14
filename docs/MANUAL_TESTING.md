@@ -13,7 +13,9 @@ and whether an active profile selects an operation mode.
 - `make all` (tests, build, package validation).
 - `sudo ./scripts/verify-modes.zsh` — **release gate.** Do not tag until it
   reports a match. It only reads; you change modes in Little Snitch yourself.
-- Install the built workflow in Alfred.
+- Install the built workflow in Alfred. Built before the tag exists, it is
+  named `Little-Snitch-Control-v<version>+g<commit>.alfredworkflow`. Keep its
+  checksum: the release built from the tag must reproduce it.
 - Note the current filter state and mode so both can be restored.
 - Keep Little Snitch's menu bar item visible during Filter Off testing; that,
   not this workflow, is your recovery path.

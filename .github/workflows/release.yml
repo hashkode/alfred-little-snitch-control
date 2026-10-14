@@ -50,6 +50,13 @@ jobs:
       - name: Test, build, and validate
         run: make all
 
+      # scripts/build.zsh names an archive for the release only when the
+      # checkout is clean and tagged v<version>. If it did not recognise this
+      # tag, the asset would be published under a development name.
+      - name: Archive is named for the tag
+        if: github.ref_type == 'tag'
+        run: test -f "dist/Little-Snitch-Control-${GITHUB_REF_NAME}.alfredworkflow"
+
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         if: startsWith(github.ref, 'refs/tags/v')
         with:

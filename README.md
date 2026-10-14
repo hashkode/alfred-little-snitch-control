@@ -69,8 +69,11 @@ refused. Little Snitch 5 and earlier are refused.
 
 3. Open the file to install it in Alfred.
 
-Or build it yourself with `make build`; the archive is byte-reproducible, so a
-local build of a release tag produces the same checksum as the published asset.
+Or build it yourself: check out the release tag and run `make build`. The
+archive is byte-reproducible, so a build of the release tag produces the same
+checksum as the published asset. A build of any other commit, or of a tree
+with uncommitted changes, is named `Little-Snitch-Control-v<version>+g<commit>`
+(with `.dirty` for changes) so it cannot be mistaken for the release.
 
 ## Setup
 

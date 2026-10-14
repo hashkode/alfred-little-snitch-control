@@ -26,6 +26,50 @@ abort() {
 version=$(/usr/libexec/PlistBuddy -c 'Print :version' "$WORKFLOW_DIR/info.plist")
 [[ "$version" == <->.<->.<-> ]] || abort "invalid workflow version: $version"
 
+# Only a clean build of the commit tagged v<version> carries the plain version
+# in its name. Anything else is a development build and says so, because
+# README tells users to compare checksums: a build of main named like the
+# release it is not would make "I built the wrong commit" look exactly like
+# "the release was tampered with".
+#
+# The suffix is semver build metadata on the FILE NAME only. The archive's
+# contents, info.plist included, do not change, so a candidate built from the
+# release commit before it is tagged is byte-identical to the published asset.
+#
+# `git tag --points-at HEAD --list v<version>` asks exactly whether this
+# version's tag is on HEAD, annotated or lightweight. `git describe
+# --exact-match` names a single tag, and with several on HEAD it can name
+# another one: with v0.3.1, a-other and nightly on one commit it answered
+# "nightly", which would have turned a release build into a development build.
+#
+# Without git, as in a source tarball, nothing shows which commit this is, so
+# the build is a development build. That includes a tarball unpacked inside
+# some other repository, where git would otherwise answer for the enclosing one.
+build_suffix() {
+  local head="" changes="" toplevel=""
+  toplevel=$(/usr/bin/git -C "$ROOT_DIR" rev-parse --show-toplevel 2>/dev/null) || toplevel=""
+  if [[ -z "$toplevel" || "${toplevel:A}" != "${ROOT_DIR:A}" ]]; then
+    print -r -- "+dev"
+    return
+  fi
+  head=$(/usr/bin/git -C "$ROOT_DIR" rev-parse --verify --quiet HEAD 2>/dev/null) || {
+    print -r -- "+dev"
+    return
+  }
+  changes=$(/usr/bin/git -C "$ROOT_DIR" status --porcelain --untracked-files=no 2>/dev/null) || {
+    print -r -- "+dev"
+    return
+  }
+  if [[ -z "$changes" && -n "$(/usr/bin/git -C "$ROOT_DIR" tag --points-at HEAD --list "v$version" 2>/dev/null)" ]]; then
+    print -r -- ""
+  elif [[ -z "$changes" ]]; then
+    print -r -- "+g${head[1,7]}"
+  else
+    print -r -- "+g${head[1,7]}.dirty"
+  fi
+}
+archive_suffix=$(build_suffix)
+
 /usr/bin/plutil -lint "$WORKFLOW_DIR/info.plist" >/dev/null
 
 # The packaged manifest, declared once. The pre-flight checks, the staging
@@ -122,7 +166,7 @@ done
 /usr/bin/find "$stage_dir" -exec /usr/bin/touch -h -t "$FIXED_TIMESTAMP" {} +
 
 /bin/mkdir -p "$DIST_DIR"
-archive_name="Little-Snitch-Control-v${version}.alfredworkflow"
+archive_name="Little-Snitch-Control-v${version}${archive_suffix}.alfredworkflow"
 archive_path="$DIST_DIR/$archive_name"
 
 # Clear previous artifacts so a stale archive can never be mistaken for, or

@@ -18,8 +18,36 @@ fail() {
 }
 
 version=$(/usr/libexec/PlistBuddy -c 'Print :version' "$WORKFLOW_DIR/info.plist")
-archive="${1:-$ROOT_DIR/dist/Little-Snitch-Control-v${version}.alfredworkflow}"
+if (( $# > 0 )); then
+  archive="$1"
+else
+  # scripts/build.zsh clears dist/ before writing, so a build leaves one.
+  archives=("$ROOT_DIR"/dist/Little-Snitch-Control-v"${version}"*.alfredworkflow(N))
+  (( ${#archives} == 1 )) || \
+    fail "expected one archive for v$version in dist/, found ${#archives} (run 'make build' first)"
+  archive="${archives[1]}"
+fi
 [[ -f "$archive" ]] || fail "release archive not found: $archive (run 'make build' first)"
+
+# The name must say what was built. Restated here from scripts/build.zsh rather
+# than shared, so a change to either is caught: the plain version only for a
+# clean checkout of the commit tagged v<version>, otherwise a suffix naming the
+# commit, or +dev when this is not a git checkout of its own.
+expected_suffix="+dev"
+package_toplevel=$(/usr/bin/git -C "$ROOT_DIR" rev-parse --show-toplevel 2>/dev/null) || package_toplevel=""
+if [[ -n "$package_toplevel" && "${package_toplevel:A}" == "${ROOT_DIR:A}" ]]; then
+  package_head=$(/usr/bin/git -C "$ROOT_DIR" rev-parse HEAD)
+  package_changes=$(/usr/bin/git -C "$ROOT_DIR" status --porcelain --untracked-files=no)
+  if [[ -n "$package_changes" ]]; then
+    expected_suffix="+g${package_head[1,7]}.dirty"
+  elif [[ -n "$(/usr/bin/git -C "$ROOT_DIR" tag --points-at HEAD --list "v$version")" ]]; then
+    expected_suffix=""
+  else
+    expected_suffix="+g${package_head[1,7]}"
+  fi
+fi
+[[ "${archive:t}" == "Little-Snitch-Control-v${version}${expected_suffix}.alfredworkflow" ]] || \
+  fail "archive ${archive:t} is not named for what was built (expected suffix '${expected_suffix}')"
 
 /usr/bin/unzip -t "$archive" >/dev/null || fail "release archive is corrupt"
 
