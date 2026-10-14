@@ -6,6 +6,17 @@ behaviour in a minor release.
 
 ## Unreleased
 
+### Changed
+
+- Drop the `category` key from `info.plist`. Alfred discards it on import, so
+  every installed copy already differed from the repository; a test now
+  refuses any top-level key Alfred does not keep. The queue settings the same
+  review flagged stay: Alfred writes them back on every import, so removing
+  them would create the same mismatch.
+- Name the keyword in the import text as the default (`snitch by default`).
+  The text cannot follow a renamed keyword, and it used to read as if
+  `snitch` were the only one.
+
 ### Tests
 
 - Test the two decisions made after the administrator prompt. How a failed
