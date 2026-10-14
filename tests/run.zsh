@@ -690,8 +690,8 @@ done
 
 refresh_rendered=$(dry_run refresh)
 assert_not_contains "$refresh_rendered" "write-preference" "refresh must not write any preference"
-assert_contains "$refresh_rendered" "'read-preference' 'activeSilentMode'" "refresh must read the mode"
-assert_contains "$refresh_rendered" "'read-preference' 'networkFilterEnabled'" "refresh must read the filter"
+assert_contains "$refresh_rendered" "'read-preference' 'activeSilentMode' 'networkFilterEnabled'" \
+  "refresh must read the mode and the filter"
 
 # Integrity properties of the generated root shell.
 assert_contains "$refresh_rendered" "codesign --verify --strict -R" \
@@ -700,7 +700,7 @@ assert_not_contains "$refresh_rendered" "codesign -dv" \
   "signature metadata is forgeable and must not be the check"
 assert_contains "$refresh_rendered" "unset GREP_OPTIONS" \
   "the root shell must not inherit GREP_OPTIONS, which would disable every grep-based gate"
-assert_contains "$refresh_rendered" "check_cli; mode=\$(" \
+assert_contains "$refresh_rendered" "check_cli; readback=\$(" \
   "each privileged read must be preceded by an integrity check"
 assert_contains "$refresh_rendered" "MLZF7K7B5R" "the signing team must be pinned"
 # The two version predicates must agree. The unprivileged one decides which
@@ -769,13 +769,62 @@ done
 # permanent no-op, and the realistic regression (`set numericUser to item 2 of
 # argv`) passed it. argv item 2 is already consumed for --dry-run, so the two
 # are one edit apart.
-assert_equal "2" "$(count_occurrences "'-u' '$(/usr/bin/id -u)'" "$refresh_rendered")" \
-  "the privileged command must carry this process's own uid, once per read-preference call"
+assert_equal "1" "$(count_occurrences "'-u' '$(/usr/bin/id -u)'" "$refresh_rendered")" \
+  "the privileged command must carry this process's own uid, once per littlesnitch call"
+assert_equal "2" "$(count_occurrences "'-u' '$(/usr/bin/id -u)'" "$(dry_run mode.alert)")" \
+  "a write and its readback must both carry this process's own uid"
 
 for forged_uid in 0 1 501000; do
   [[ "$forged_uid" == "$(/usr/bin/id -u)" ]] && continue
   assert_not_contains "$refresh_rendered" "'-u' '$forged_uid'" \
     "the rendered command must not carry a uid this process did not derive"
+done
+
+# Each littlesnitch run in the privileged context costs about 6.7 s (#46), so
+# every action reads both preferences in exactly one call.
+for action_id in refresh "${(@k)expected_writes}"; do
+  assert_equal "1" "$(count_occurrences "'read-preference'" "$(dry_run "$action_id")")" \
+    "$action_id must read both preferences in a single littlesnitch call"
+done
+
+# The root shell's own parsing of the combined read, run as /bin/sh runs it,
+# against what littlesnitch prints. It prints on stdout, in the order asked,
+# and exits 0 even for an unknown key (observed in the privileged context on
+# Little Snitch 6.5), so only the exact shape may pass.
+if [[ "$refresh_rendered" =~ "readback=\\\$\\([^)]*\\); (.*)\$" ]]; then
+  readback_parser="${match[1]}"
+else
+  fail "could not extract the readback parser from the rendered root shell"
+fi
+pass
+parse_readback() {
+  /bin/sh -c "set -eu; readback=\$1; $readback_parser" sh "$1" 2>/dev/null
+}
+for parse_mode in 0 1 2; do
+  for parse_filter in true false; do
+    parsed_status=0
+    parsed=$(parse_readback $'*** Value for activeSilentMode:\n'"$parse_mode"$'\n*** Value for networkFilterEnabled:\n'"$parse_filter") || parsed_status=$?
+    assert_equal "0 $parse_mode|$parse_filter" "$parsed_status $parsed" "the readback parser on mode $parse_mode, filter $parse_filter"
+  done
+done
+typeset -a malformed_readbacks
+malformed_readbacks=(
+  $'*** Value for networkFilterEnabled:\ntrue\n*** Value for activeSilentMode:\n0'
+  'Invalid preference key "activeSilentMode"'
+  $'*** Value for activeSilentMode:\n0\n*** Value for networkFilterEnabled:\ntrue\n*** Value for extra:\n1'
+  $'0\n0\n*** Value for networkFilterEnabled:\ntrue'
+  $'*** Value for activeSilentMode:\n0\n*** Value for networkFilterEnabled:'
+  $'*** Value for activeSilentMode:\r\n0\r\n*** Value for networkFilterEnabled:\r\ntrue'
+  $'*** Value for activeSilentMode:\n0 \n*** Value for networkFilterEnabled:\ntrue'
+  $'*** Value for activeSilentMode:\n3\n*** Value for networkFilterEnabled:\ntrue'
+  $'*** Value for activeSilentMode:\n0\n*** Value for networkFilterEnabled:\nTRUE'
+  $'0\ntrue'
+  ""
+)
+for malformed in "${malformed_readbacks[@]}"; do
+  parsed_status=0
+  parse_readback "$malformed" >/dev/null || parsed_status=$?
+  assert_equal "65" "$parsed_status" "the readback parser must refuse ${(qqq)malformed}"
 done
 
 # --- bin/action ------------------------------------------------------------

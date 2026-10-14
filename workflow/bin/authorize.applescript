@@ -57,8 +57,12 @@ on run argv
     error "Unsupported action." number 64
   end if
 
-  set modeCommand to my quotedCommand(baseArguments & {"read-preference", "activeSilentMode"})
-  set filterCommand to my quotedCommand(baseArguments & {"read-preference", "networkFilterEnabled"})
+  -- One call reads both preferences. Every littlesnitch run in this privileged
+  -- context took about 6.7 seconds however much it was asked (#46), so a
+  -- second read cost a second wait. It prints, on stdout and in the order
+  -- asked, a "*** Value for <key>:" line followed by the value, and exits 0
+  -- even for a key it does not know, so the whole shape is checked below.
+  set readbackCommand to my quotedCommand(baseArguments & {"read-preference", "activeSilentMode", "networkFilterEnabled"})
   set protectedPaths to {littleSnitchApp, littleSnitchApp & "/Contents", littleSnitchApp & "/Contents/Components", littleSnitchCLI}
 
   -- Sanitise the root shell itself, not merely the Little Snitch invocations.
@@ -72,10 +76,15 @@ on run argv
     set shellSource to shellSource & "check_cli; " & my quotedCommand(mutationArguments) & " >/dev/null; "
   end if
 
-  set shellSource to shellSource & "check_cli; mode=$(" & modeCommand & "); "
-  set shellSource to shellSource & "check_cli; filter=$(" & filterCommand & "); "
+  set shellSource to shellSource & "check_cli; readback=$(" & readbackCommand & "); "
+  set shellSource to shellSource & "mode=$(/usr/bin/printf '%s\\n' \"$readback\" | /usr/bin/sed -n '2p'); "
+  set shellSource to shellSource & "filter=$(/usr/bin/printf '%s\\n' \"$readback\" | /usr/bin/sed -n '4p'); "
   set shellSource to shellSource & "case \"$mode\" in 0|1|2) ;; *) exit 65 ;; esac; "
   set shellSource to shellSource & "case \"$filter\" in true|false) ;; *) exit 65 ;; esac; "
+  -- The values alone are not enough: the output must be exactly the four lines
+  -- for these two keys, in this order, so a renamed key, an error message or
+  -- an extra line fails closed instead of being read as a value.
+  set shellSource to shellSource & "[ \"$readback\" = \"$(/usr/bin/printf '*** Value for activeSilentMode:\\n%s\\n*** Value for networkFilterEnabled:\\n%s' \"$mode\" \"$filter\")\" ] || exit 65; "
   set shellSource to shellSource & "/usr/bin/printf '%s|%s\\n' \"$mode\" \"$filter\""
 
   if dryRun then return shellSource

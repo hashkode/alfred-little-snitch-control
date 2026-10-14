@@ -186,7 +186,8 @@ Every privileged action follows the same sequence:
 2. A fixed AppleScript maps that identifier to one predefined Little Snitch
    command. No text from Alfred reaches the shell.
 3. macOS requests administrator authorization.
-4. Both preferences are read back and accepted only if they are literally
+4. Both preferences are read back in one call and accepted only if Little
+   Snitch's answer has exactly the expected shape and the values are literally
    `0`, `1`, `2` and `true`, `false`.
 5. Only a confirmed result is written to a user-owned cache and displayed.
 
