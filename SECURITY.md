@@ -76,7 +76,9 @@ turn the switch back off yourself.
   the lock is gone, so this is a bound on concurrency, not a guarantee that no
   privileged call is in flight.
 - **Misreported outcomes.** Both preferences are read back after every action
-  and must be literally `0`, `1`, `2` and `true`, `false`. If the observed state
+  and must be literally `0`, `1`, `2` and `true`, `false`. `littlesnitch` exits
+  0 even for a key it does not know, so its whole answer must match the expected
+  four lines; an error message or an extra line is refused, not parsed. If the observed state
   disagrees with the requested one, the workflow says so rather than claiming
   success.
 

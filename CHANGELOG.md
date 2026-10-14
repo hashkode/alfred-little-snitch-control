@@ -38,6 +38,13 @@ behaviour in a minor release.
 
 ### Changed
 
+- Read both preferences in one Little Snitch call. Every `littlesnitch` run in
+  the administrator context took about 6.7 seconds on Little Snitch 6.5,
+  however much it was asked, so the separate reads of the mode and the filter
+  cost one extra wait per action: an action now makes two calls instead of
+  three, and Refresh one instead of two. The answer is accepted only in its
+  exact expected shape, because `littlesnitch` exits 0 even for a key it does
+  not know.
 - Drop the `category` key from `info.plist`. Alfred discards it on import, so
   every installed copy already differed from the repository; a test now
   refuses any top-level key Alfred does not keep. The queue settings the same
