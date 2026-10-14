@@ -367,6 +367,81 @@ done
   fail "sourcing common.zsh twice aborted"
 pass
 
+# --- common.zsh: what the user is told after the prompt --------------------
+#
+# Both decisions used to be inline in bin/action and untested. The
+# confirmation is the only check between a privileged readback and a banner
+# saying the firewall changed.
+
+typeset -a classification_table
+classification_table=(
+  "authorize.applescript: execution error: User canceled. (-128)"          cancelled
+  "authorize.applescript: execution error: Abgebrochen. (-128)"            cancelled
+  "User canceled"                                                          cancelled
+  "execution error: The command exited with a non-zero status. (77)"       integrity
+  "The command exited with status 77"                                      integrity
+  "execution error: The command exited with a non-zero status. (78)"       version
+  "The command exited with status 78"                                      version
+  "execution error: Access via Terminal is not allowed. (1)"               terminal-access
+  "execution error: not authorized (1)"                                    terminal-access
+  "Enable it in Preferences > Security"                                    terminal-access
+  "execution error: The command exited with a non-zero status. (177)"      rejected
+  "execution error: The command exited with a non-zero status. (1)"        rejected
+  "execution error: An error occurred. (-1280)"                            rejected
+  ""                                                                       rejected
+  # Precedence: a cancelled prompt is never reported as a failure, and an
+  # integrity refusal is not mistaken for missing Terminal access.
+  "User canceled. Terminal (-128)"                                         cancelled
+  "Terminal (77)"                                                          integrity
+)
+(( ${#classification_table} % 2 == 0 )) || fail "classification_table is not a list of pairs"
+pass
+for (( classification_index = 1; classification_index < ${#classification_table}; classification_index += 2 )); do
+  assert_equal "${classification_table[classification_index + 1]}" \
+    "$(lsctl_classify_authorization_error "${classification_table[classification_index]}")" \
+    "osascript error ${(qqq)classification_table[classification_index]} is misclassified"
+done
+
+# Every privileged action against every state a readback can carry. The
+# expected answer is derived here independently, so swapping two cases in
+# common.zsh fails rather than agreeing with itself.
+typeset -A confirmation_wanted
+confirmation_wanted=(
+  refresh           "any"
+  mode.alert        "mode=0"
+  mode.silent-allow "mode=1"
+  mode.silent-deny  "mode=2"
+  filter.enable     "filter=true"
+  filter.disable    "filter=false"
+)
+for action_id in "${LSCTL_ACTIONS[@]}"; do
+  [[ "$action_id" == open.* ]] && continue
+  (( ${+confirmation_wanted[$action_id]} )) || fail "privileged action $action_id has no expected readback in this test"
+  pass
+done
+for action_id in "${(@k)confirmation_wanted}"; do
+  wanted="${confirmation_wanted[$action_id]}"
+  for readback_mode in 0 1 2; do
+    for readback_filter in true false; do
+      case "$wanted" in
+        any) expected_confirmation="yes" ;;
+        mode=*) [[ "$readback_mode" == "${wanted#mode=}" ]] && expected_confirmation="yes" || expected_confirmation="no" ;;
+        filter=*) [[ "$readback_filter" == "${wanted#filter=}" ]] && expected_confirmation="yes" || expected_confirmation="no" ;;
+      esac
+      actual_confirmation="no"
+      lsctl_confirms_expectation "$action_id" "$readback_mode" "$readback_filter" && actual_confirmation="yes"
+      assert_equal "$expected_confirmation" "$actual_confirmation" \
+        "$action_id with readback $readback_mode|$readback_filter"
+    done
+  done
+done
+for unconfirmable in open.app open.help open.download unknown.action ""; do
+  if lsctl_confirms_expectation "$unconfirmable" 0 true; then
+    fail "an action with no expected state (${unconfirmable:-<empty>}) was confirmed"
+  fi
+  pass
+done
+
 # --- common.zsh: locking ---------------------------------------------------
 #
 # The lock is a kernel advisory lock (zsystem flock). What matters is that a
@@ -474,6 +549,18 @@ for action_id in "${(@k)expected_writes}"; do
     assert_not_contains "$rendered" "${expected_writes[$other_id]}" \
       "$action_id also emits the write belonging to $other_id"
   done
+
+  # The value an action writes must be the value bin/action then accepts as
+  # confirmation. The two maps live in different files and languages, so a
+  # change to one alone would otherwise pass both of their own tests.
+  written_key="${${expected_writes[$action_id]#\'write-preference\' \'}%%\'*}"
+  written_value="${${expected_writes[$action_id]##* \'}%\'}"
+  case "$written_key" in
+    activeSilentMode) lsctl_confirms_expectation "$action_id" "$written_value" true ;;
+    networkFilterEnabled) lsctl_confirms_expectation "$action_id" 0 "$written_value" ;;
+    *) fail "unexpected preference key '$written_key' in the action map" ;;
+  esac || fail "$action_id writes $written_key=$written_value, which bin/action would not confirm"
+  pass
 done
 
 refresh_rendered=$(dry_run refresh)

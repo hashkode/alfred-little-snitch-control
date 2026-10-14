@@ -175,20 +175,23 @@ authorization_status=$?
 authorization_message="$(/bin/cat "$authorization_errors")"
 
 if (( authorization_status != 0 )); then
-  if [[ "$authorization_message" == *"(-128)"* || "$authorization_message" == *"User canceled"* ]]; then
-    notify "Cancelled — no Little Snitch setting was changed."
-  fi
-  if [[ "$authorization_message" == *"(77)"* || "$authorization_message" == *"status 77"* ]]; then
-    fail "Little Snitch changed or failed its integrity check; no command was run."
-  fi
-  if [[ "$authorization_message" == *"(78)"* || "$authorization_message" == *"status 78"* ]]; then
-    fail "Little Snitch reported an unsupported version; no command was run."
-  fi
-  if [[ "$authorization_message" == *"Terminal"* || "$authorization_message" == *"not authorized"* || \
-        "$authorization_message" == *"Preferences"*"Security"* ]]; then
-    fail "Enable Little Snitch → Settings → Security → Allow access via Terminal, then try again."
-  fi
-  fail "Little Snitch rejected the request. Check Terminal access in its Security settings."
+  case "$(lsctl_classify_authorization_error "$authorization_message")" in
+    cancelled)
+      notify "Cancelled — no Little Snitch setting was changed."
+      ;;
+    integrity)
+      fail "Little Snitch changed or failed its integrity check; no command was run."
+      ;;
+    version)
+      fail "Little Snitch reported an unsupported version; no command was run."
+      ;;
+    terminal-access)
+      fail "Enable Little Snitch → Settings → Security → Allow access via Terminal, then try again."
+      ;;
+    *)
+      fail "Little Snitch rejected the request. Check Terminal access in its Security settings."
+      ;;
+  esac
 fi
 
 if ! lsctl_is_readback "$authorization_output"; then
@@ -197,16 +200,6 @@ fi
 
 mode="${authorization_output%%|*}"
 filter="${authorization_output#*|}"
-
-expected_mode=""
-expected_filter=""
-case "$action_id" in
-  mode.alert) expected_mode="0" ;;
-  mode.silent-allow) expected_mode="1" ;;
-  mode.silent-deny) expected_mode="2" ;;
-  filter.enable) expected_filter="true" ;;
-  filter.disable) expected_filter="false" ;;
-esac
 
 uid=$(/usr/bin/id -u)
 verified_at=$(/bin/date +%s)
@@ -220,11 +213,15 @@ if [[ "$cache_written" == "false" ]]; then
   cache_suffix=" The actual status could not be cached."
 fi
 
-if [[ -n "$expected_mode" && "$mode" != "$expected_mode" ]]; then
-  fail "Mode change was not confirmed; Little Snitch reports $(lsctl_mode_label "$mode").${cache_suffix}"
-fi
-if [[ -n "$expected_filter" && "$filter" != "$expected_filter" ]]; then
-  fail "Filter change was not confirmed; Little Snitch reports $(lsctl_filter_label "$filter").${cache_suffix}"
+if ! lsctl_confirms_expectation "$action_id" "$mode" "$filter"; then
+  case "$action_id" in
+    mode.*)
+      fail "Mode change was not confirmed; Little Snitch reports $(lsctl_mode_label "$mode").${cache_suffix}"
+      ;;
+    *)
+      fail "Filter change was not confirmed; Little Snitch reports $(lsctl_filter_label "$filter").${cache_suffix}"
+      ;;
+  esac
 fi
 
 if [[ "$cache_written" == "false" ]]; then
