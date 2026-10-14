@@ -6,7 +6,7 @@ readings.
 
 - Little Snitch: 6.5
 - macOS: 26.7.1 (arm64)
-- Checked: 2026-10-09
+- Checked: 2026-10-14
 
 | Little Snitch operation mode | `activeSilentMode` | Workflow action |
 | --- | --- | --- |
