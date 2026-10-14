@@ -75,12 +75,14 @@ exists, nothing is published, and re-running the workflow retries.
   minutes to cover the wait.
 - Only a commit CI ran on can be released. Merging a stack runs CI on its tip only, so the
   intermediate squash commits are not releasable: tag the tip.
-- `workflow_dispatch` rehearses the gate, the build and the package check from any ref without
-  attesting or publishing. The attestation and release steps still first run on a real tag.
+- `workflow_dispatch` rehearses the gate, the build, the package check and the hand-off to the
+  publish job from any ref without attesting or publishing. The attestation and release steps
+  still first run on a real tag.
 - The gate trusts GitHub's check-run record. A flaky pass in the original run is not caught a
   second time.
-- The job holds write, `id-token` and attestation permissions while it builds, including during a
-  rehearsal. Tracked by #39.
+- Since #39 the build runs with a read-only token. The publish job holds write, `id-token` and
+  attestation permissions, during a rehearsal too, but checks out nothing and runs none of the
+  repository's scripts.
 
 ## Re-check triggers
 

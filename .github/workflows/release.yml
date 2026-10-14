@@ -3,28 +3,34 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
-  # A rehearsal of the release path against any ref: the gate, the build and
-  # the package check, but never the attestation or the release. A v* tag is
-  # permanent here (release-tag-immutability has no bypass), so this is how the
-  # path is exercised without spending one.
+  # A rehearsal of the release path against any ref: the gate, the build, the
+  # package check and the hand-off to the publish job, but never the
+  # attestation or the release. A v* tag is permanent here
+  # (release-tag-immutability has no bypass), so this is how the path is
+  # exercised without spending one.
   workflow_dispatch:
 
-permissions:
-  contents: write
-  id-token: write
-  attestations: write
-  # The release gate reads the commit's check runs and its CI workflow runs.
-  checks: read
-  actions: read
+# Nothing by default. Each job asks for what it uses.
+permissions: {}
 
 jobs:
-  release:
-    name: Build and publish
+  # Runs the repository's own scripts, so it gets a read-only token: a
+  # compromised build step can neither write to the repository nor mint a
+  # signing identity.
+  build:
+    name: Build
     runs-on: macos-latest
     # The release gate waits up to 10 minutes for CI still running on the commit.
     timeout-minutes: 30
+    permissions:
+      contents: read
+      # The release gate reads the commit's check runs and its CI workflow runs.
+      checks: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Before anything is built: the commit must be on main and must already
       # have passed ci-required, the check every merge to main requires.
@@ -65,6 +71,49 @@ jobs:
       - name: Archive is named for the tag
         if: github.ref_type == 'tag'
         run: test -f "dist/Little-Snitch-Control-${GITHUB_REF_NAME}.alfredworkflow"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ github.sha }}
+          path: |
+            dist/*.alfredworkflow
+            dist/*.alfredworkflow.sha256
+            dist/release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  # Holds the write, signing and attestation permissions, and runs none of the
+  # repository's scripts: no checkout, only pinned actions and the checks
+  # below. It runs in a rehearsal too, so the hand-off is exercised before a
+  # tag depends on it; only the attestation and the release are tag-only.
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-${{ github.sha }}
+          path: dist
+
+      # The attestation must cover exactly the bytes the build job built and
+      # validated. The checksum written next to them on the build runner is
+      # the link between the two jobs.
+      - name: Archive matches the checksum it was built with
+        working-directory: dist
+        run: |
+          set -- *.alfredworkflow
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+            echo "Expected exactly one archive, found: $*" >&2
+            exit 1
+          fi
+          sha256sum --check --strict "$1.sha256"
+          test -s release-notes.md
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         if: startsWith(github.ref, 'refs/tags/v')

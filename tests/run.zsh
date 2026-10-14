@@ -1401,6 +1401,41 @@ for permission in 'checks: read' 'actions: read'; do
   assert_contains "$(/bin/cat "$release_workflow")" "$permission" "release.yml needs $permission for the release gate"
 done
 
+# Only the job that runs no repository code may write or sign (#39). The build
+# job runs `make all` and the gate; the publish job only downloads, verifies
+# and hands the bytes to pinned actions.
+workflow_job() {
+  /usr/bin/awk -v want="  $2:" '
+    $0 == want { inside = 1; print; next }
+    inside && /^  [A-Za-z0-9_-]+:$/ { exit }
+    inside { print }' "$1"
+}
+build_job=$(workflow_job "$release_workflow" build)
+publish_job=$(workflow_job "$release_workflow" publish)
+[[ -n "$build_job" && -n "$publish_job" ]] || fail "release.yml must have a build job and a publish job"
+pass
+assert_contains "$(/bin/cat "$release_workflow")" $'\npermissions: {}\n' \
+  "release.yml must grant nothing by default"
+for write_permission in 'contents: write' 'id-token: write' 'attestations: write'; do
+  assert_not_contains "$build_job" "$write_permission" "the build job runs repository scripts and must not hold $write_permission"
+  assert_contains "$publish_job" "$write_permission" "the publish job needs $write_permission"
+done
+assert_contains "$build_job" "contents: read" "the build job needs to read the repository"
+assert_contains "$build_job" "persist-credentials: false" "the build job must not leave a token in the checkout"
+for repository_code in actions/checkout './scripts/' 'make '; do
+  assert_not_contains "$publish_job" "$repository_code" "the publish job holds write permissions and must not run $repository_code"
+done
+assert_contains "$publish_job" "needs: build" "the publish job must wait for the build"
+assert_contains "$publish_job" 'name: release-${{ github.sha }}' "the publish job must download the artifact the build job uploads"
+assert_contains "$build_job" 'name: release-${{ github.sha }}' "the build job must upload the artifact the publish job downloads"
+assert_contains "$publish_job" 'sha256sum --check --strict "$1.sha256"' \
+  "the publish job must re-verify the archive against the checksum built with it"
+verify_line=$({ /usr/bin/grep -n 'sha256sum --check' "$release_workflow" || true; } | /usr/bin/head -1 | /usr/bin/cut -d: -f1)
+first_attest_line=$({ /usr/bin/grep -n 'actions/attest-build-provenance' "$release_workflow" || true; } | /usr/bin/head -1 | /usr/bin/cut -d: -f1)
+[[ -n "$verify_line" && -n "$first_attest_line" ]] && (( verify_line < first_attest_line )) || \
+  fail "the publish job must verify the checksum before attesting"
+pass
+
 # The release body is the CHANGELOG section, extracted and checked before the
 # build, never GitHub's generated list of pull requests (#49).
 assert_not_contains "$(/bin/cat "$release_workflow")" "generate_release_notes" \

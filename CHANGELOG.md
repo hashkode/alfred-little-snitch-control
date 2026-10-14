@@ -52,7 +52,18 @@ behaviour in a minor release.
   9 of 17 changes and missed the privileged-path fixes. The release workflow
   extracts the section with `scripts/release-notes.zsh` before building and
   fails on a missing, empty or implausibly small one.
-- Say "followed by a space" in the README's setup steps too. 0.3.0 corrected
+- Say "followed by a space" in the README's setup steps too.
+
+### Security
+
+- Build releases with a read-only token. The release workflow ran
+  `make all`, which executes the repository's own scripts, in a job holding
+  write, signing (`id-token`) and attestation permissions. It is now two
+  jobs: the build, which gets read access only, and a publish job, which
+  holds the write permissions but checks out nothing and runs no repository
+  script. It re-verifies the archive against the checksum written with it
+  before attesting, so the attestation covers exactly the bytes that were
+  built and validated. 0.3.0 corrected
   the usage section but left the first-run step without it.
 
 ### Tests
