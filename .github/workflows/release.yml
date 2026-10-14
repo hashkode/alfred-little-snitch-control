@@ -33,7 +33,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/release-gate.zsh "$GITHUB_REPOSITORY" "$GITHUB_SHA"
 
-      # Fail before building if the tag, info.plist and CHANGELOG disagree.
+      # Fail before building if the tag and info.plist disagree.
       - name: Tag matches the source tree
         run: |
           version=$(/usr/libexec/PlistBuddy -c 'Print :version' workflow/info.plist)
@@ -42,10 +42,19 @@ jobs:
             echo "Tag $GITHUB_REF does not match info.plist version $version" >&2
             exit 1
           fi
-          if ! grep -q "^## $version" CHANGELOG.md; then
-            echo "CHANGELOG.md has no section for $version" >&2
-            exit 1
-          fi
+
+      # The release body is this version's CHANGELOG.md section. GitHub's
+      # generated notes list the pull requests merged between two tags and
+      # silently drop any commit whose pull request it cannot find: for v0.3.0
+      # they held 9 of 17 changes (#49). The script fails on a missing, empty
+      # or implausibly small section, so a bad extraction stops the run here.
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :version' workflow/info.plist)
+          mkdir -p dist
+          ./scripts/release-notes.zsh "$version" "$GITHUB_REPOSITORY" > dist/release-notes.md
+          echo "Release notes: $(wc -c < dist/release-notes.md) bytes, $(grep -c '^- ' dist/release-notes.md) entries"
+          head -n 12 dist/release-notes.md
 
       - name: Test, build, and validate
         run: make all
@@ -68,5 +77,5 @@ jobs:
           files: |
             dist/*.alfredworkflow
             dist/*.alfredworkflow.sha256
-          generate_release_notes: true
+          body_path: dist/release-notes.md
           fail_on_unmatched_files: true

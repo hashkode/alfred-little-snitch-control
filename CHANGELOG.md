@@ -46,6 +46,12 @@ behaviour in a minor release.
 - Name the keyword in the import text as the default (`snitch by default`).
   The text cannot follow a renamed keyword, and it used to read as if
   `snitch` were the only one.
+- Publish each release's `CHANGELOG.md` section as its release notes instead
+  of GitHub's generated list of merged pull requests. That list silently drops
+  any commit whose pull request GitHub can no longer find; for v0.3.0 it held
+  9 of 17 changes and missed the privileged-path fixes. The release workflow
+  extracts the section with `scripts/release-notes.zsh` before building and
+  fails on a missing, empty or implausibly small one.
 - Say "followed by a space" in the README's setup steps too. 0.3.0 corrected
   the usage section but left the first-run step without it.
 

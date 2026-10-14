@@ -72,6 +72,7 @@ zsh_sources=(
   "$WORKFLOW_DIR/bin/action"
   "$ROOT_DIR/scripts/build.zsh"
   "$ROOT_DIR/scripts/release-gate.zsh"
+  "$ROOT_DIR/scripts/release-notes.zsh"
   "$ROOT_DIR/scripts/verify-modes.zsh"
   "$ROOT_DIR/tests/run.zsh"
   "$ROOT_DIR/tests/package.zsh"
@@ -1086,6 +1087,93 @@ done
 
 write_mock "6.4.1"
 
+# --- release notes from CHANGELOG.md ----------------------------------------
+
+release_notes="$ROOT_DIR/scripts/release-notes.zsh"
+notes_changelog="$temporary_dir/CHANGELOG.md"
+/bin/cat > "$notes_changelog" <<'EOF'
+# Changelog
+
+## Unreleased
+
+- Not released yet, and long enough to pass the size floor if it were picked up by mistake.
+
+## 0.3.10 — 2027-01-02
+
+- The tenth patch, which must never be taken for 0.3.1 although its heading starts the same way.
+
+## 0.3.1 — 2026-10-20
+
+### Fixed
+
+- The first fix in 0.3.1, written out at the length a real entry has, so the floor is met.
+
+### Changed
+
+- The second entry in 0.3.1.
+
+## 0.3.0 — 2026-10-09
+
+- The 0.3.0 entry, which must not leak into the 0.3.1 notes. It is written out at
+  the length of a real entry so that its own section clears the size floor.
+
+## 0.2.9
+
+- An undated heading, which is not a release.
+
+## 0.2.8 — 2026-08-01
+
+- Too short.
+
+## 0.2.7 — 2026-07-01
+
+## 0.2.6 — 2026-06-01
+
+A section of prose with no entries at all, long enough to clear the size floor on its own, so only the entry count can refuse it.
+
+## 0.1.0 — unreleased
+
+- Never tagged.
+EOF
+
+notes_status=0
+notes=$("$release_notes" 0.3.1 hashkode/example "$notes_changelog") || notes_status=$?
+assert_equal "0" "$notes_status" "notes for a dated section must be produced"
+assert_contains "$notes" "- The first fix in 0.3.1" "the notes must carry the section's entries"
+assert_contains "$notes" "- The second entry in 0.3.1." "the notes must run to the end of the section"
+assert_not_contains "$notes" "0.3.0 entry" "the notes must stop at the next release heading"
+assert_not_contains "$notes" "tenth patch" "0.3.10 must not be taken for 0.3.1"
+assert_not_contains "$notes" "## 0.3.1" "the heading belongs to the release title, not the body"
+assert_equal "### Fixed" "${${(@f)notes}[1]}" "the notes must not start with a blank line"
+assert_equal "**Full Changelog**: https://github.com/hashkode/example/compare/v0.3.0...v0.3.1" "${${(f)notes}[-1]}" \
+  "the notes must end with a comparison against the previous release"
+
+notes_status=0
+notes=$("$release_notes" 0.3.0 hashkode/example "$notes_changelog") || notes_status=$?
+assert_equal "0" "$notes_status" "notes for 0.3.0 must be produced"
+assert_equal "**Full Changelog**: https://github.com/hashkode/example/compare/v0.2.8...v0.3.0" "${${(f)notes}[-1]}" \
+  "an undated heading is not a release and must not be named as the previous one"
+assert_not_contains "$notes" "An undated heading" "the notes must stop at the next heading even when it is not a release"
+
+# Refused: no dated section (the undated 0.2.9, a missing 9.9.9), too short,
+# empty, no entries, and malformed arguments.
+for refused_notes in "0.2.9:1" "9.9.9:1" "0.2.8:1" "0.2.7:1" "0.2.6:1" "0.3:2" "0.3.1.0:2"; do
+  notes_status=0
+  "$release_notes" "${refused_notes%%:*}" hashkode/example "$notes_changelog" >/dev/null 2>&1 || notes_status=$?
+  assert_equal "${refused_notes##*:}" "$notes_status" "release notes for ${refused_notes%%:*}"
+done
+notes_status=0
+"$release_notes" 0.3.1 'hashkode/example; touch x' "$notes_changelog" >/dev/null 2>&1 || notes_status=$?
+assert_equal "2" "$notes_status" "a malformed repository must be refused"
+
+# The real file: every released version that the release workflow could be
+# asked for must extract cleanly.
+for released in ${(f)"$(/usr/bin/sed -n 's/^## \([0-9][0-9.]*\) — [0-9-]*$/\1/p' "$ROOT_DIR/CHANGELOG.md")"}; do
+  "$release_notes" "$released" hashkode/alfred-little-snitch-control >/dev/null || \
+    fail "CHANGELOG.md's $released section does not extract as release notes"
+  pass
+done
+
 # --- the release gate -------------------------------------------------------
 #
 # scripts/release-gate.zsh decides whether a tag may publish. Every branch is
@@ -1312,6 +1400,20 @@ done
 for permission in 'checks: read' 'actions: read'; do
   assert_contains "$(/bin/cat "$release_workflow")" "$permission" "release.yml needs $permission for the release gate"
 done
+
+# The release body is the CHANGELOG section, extracted and checked before the
+# build, never GitHub's generated list of pull requests (#49).
+assert_not_contains "$(/bin/cat "$release_workflow")" "generate_release_notes" \
+  "release.yml must not publish GitHub's generated notes"
+assert_contains "$(workflow_step "$release_workflow" softprops/action-gh-release)" "body_path: dist/release-notes.md" \
+  "the release body must be the extracted CHANGELOG section"
+assert_contains "$(workflow_step "$release_workflow" "Release notes from CHANGELOG.md")" \
+  './scripts/release-notes.zsh "$version" "$GITHUB_REPOSITORY" > dist/release-notes.md' \
+  "release.yml must extract the notes with scripts/release-notes.zsh"
+notes_line=$({ /usr/bin/grep -n 'scripts/release-notes.zsh' "$release_workflow" || true; } | /usr/bin/head -1 | /usr/bin/cut -d: -f1)
+[[ -n "$notes_line" ]] && (( notes_line < build_line )) || \
+  fail "release.yml must extract and check the notes before it builds anything"
+pass
 
 # A tag build must produce the release-shaped name before anything attests or
 # publishes it; otherwise a development-named asset would ship.
