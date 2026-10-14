@@ -6,6 +6,16 @@ behaviour in a minor release.
 
 ## Unreleased
 
+### Fixed
+
+- Close the password dialog when an action is terminated. `osascript` ran in
+  the foreground, so a `kill` ended the action but left its child and the
+  dialog running; approved later, it would have changed Little Snitch after
+  the lock was released, with nothing reporting the result. The child now runs
+  in the background and the signal handlers stop it. `SIGKILL` cannot be
+  handled, so the next action stops a dialog its predecessor left open and
+  removes that run's temporary files.
+
 ### Changed
 
 - Drop the `category` key from `info.plist`. Alfred discards it on import, so

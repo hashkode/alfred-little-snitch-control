@@ -47,7 +47,12 @@ assert_true() {
 }
 
 temporary_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/alfred-little-snitch-tests.XXXXXX")
+typeset -g decoy_pid=""
 cleanup() {
+  # A failed assertion can leave the orphaned-authorizer decoy running.
+  if [[ -n "$decoy_pid" ]]; then
+    /bin/kill "$decoy_pid" 2>/dev/null || true
+  fi
   if [[ -n "${temporary_dir:-}" && "$temporary_dir" == *"/alfred-little-snitch-tests."* && -d "$temporary_dir" ]]; then
     /bin/rm -rf -- "$temporary_dir"
   fi
@@ -533,6 +538,92 @@ fi
 pass
 [[ ! -e "$temporary_dir/lock-target" ]] || fail "a symlinked lock path created its target"
 pass
+
+# --- common.zsh: an authorizer orphaned by SIGKILL -------------------------
+#
+# A decoy process stands in for the orphaned osascript. It is signalled only
+# when the recorded PID still runs the expected command.
+
+orphan_pid_file="$temporary_dir/authorizer.pid"
+# Its output goes nowhere: a decoy holding the suite's stdout would keep any
+# reader of that output waiting for it to exit.
+/bin/sleep 300 </dev/null >/dev/null 2>&1 &
+decoy_pid=$!
+
+/usr/bin/printf '%s\n' "$decoy_pid" > "$orphan_pid_file"
+lsctl_stop_orphaned_authorizer "$orphan_pid_file" "/bin/sleep 299"
+/bin/kill -0 "$decoy_pid" 2>/dev/null || fail "a process running a different command was signalled"
+pass
+[[ ! -e "$orphan_pid_file" ]] || fail "the PID file must be removed even when nothing is signalled"
+pass
+
+# The recorded PID of the test itself, with a command it is not running.
+/usr/bin/printf '%s\n' "$$" > "$orphan_pid_file"
+lsctl_stop_orphaned_authorizer "$orphan_pid_file" "/bin/sleep"
+pass
+
+# "+PID" and " PID" are accepted by both ps and kill, so only the digit check
+# refuses them.
+for unusable_pid in "" "abc" "-1" "+${decoy_pid}" " ${decoy_pid}" "${decoy_pid} ${decoy_pid}" "12345678901"; do
+  /usr/bin/printf '%s\n' "$unusable_pid" > "$orphan_pid_file"
+  lsctl_stop_orphaned_authorizer "$orphan_pid_file" "/bin/sleep"
+  /bin/kill -0 "$decoy_pid" 2>/dev/null || fail "an unusable PID file (${(qqq)unusable_pid}) signalled a process"
+  pass
+done
+
+/bin/ln -s "$temporary_dir/elsewhere.pid" "$orphan_pid_file"
+/usr/bin/printf '%s\n' "$decoy_pid" > "$temporary_dir/elsewhere.pid"
+lsctl_stop_orphaned_authorizer "$orphan_pid_file" "/bin/sleep"
+/bin/kill -0 "$decoy_pid" 2>/dev/null || fail "a symlinked PID file was followed"
+pass
+/bin/rm -f "$orphan_pid_file" "$temporary_dir/elsewhere.pid"
+
+/usr/bin/printf '%s\n' "$decoy_pid" > "$orphan_pid_file"
+lsctl_stop_orphaned_authorizer "$orphan_pid_file" "/bin/sleep"
+# Bounded, so a regression fails here instead of waiting out the decoy. Until
+# it is reaped, a dead decoy is a zombie, which kill -0 still reports alive.
+decoy_alive() {
+  local state
+  state=$(/bin/ps -o stat= -p "$decoy_pid" 2>/dev/null) || return 1
+  [[ "$state" != Z* ]]
+}
+for (( decoy_poll = 0; decoy_poll < 50; decoy_poll++ )); do
+  decoy_alive || break
+  /bin/sleep 0.1
+done
+decoy_alive && fail "the orphaned authorizer was not stopped"
+pass
+decoy_status=0
+wait "$decoy_pid" || decoy_status=$?
+decoy_pid=""
+assert_equal "143" "$decoy_status" "the orphaned authorizer must be stopped with SIGTERM"
+
+# Only the authorizer's temporary files go; the cache and lock stay.
+authorizer_files_dir="$temporary_dir/authorizer-files"
+/bin/mkdir -m 700 "$authorizer_files_dir"
+: > "$authorizer_files_dir/.osascript.AbC123"
+: > "$authorizer_files_dir/.osascript.xYz789"
+: > "$authorizer_files_dir/state"
+: > "$authorizer_files_dir/action.lock"
+: > "$authorizer_files_dir/.state.Q1w2E3"
+lsctl_remove_authorizer_files "$authorizer_files_dir"
+remaining_files=("$authorizer_files_dir"/*(DN:t))
+assert_equal ".state.Q1w2E3 action.lock state" "${(j: :)remaining_files}" \
+  "only the authorizer's temporary files may be removed"
+lsctl_remove_authorizer_files "$authorizer_files_dir"
+pass
+
+# bin/action cannot run here: it needs Little Snitch and its signature. These
+# pin the structure the manual checklist exercises.
+action_source=$(<"$WORKFLOW_DIR/bin/action")
+assert_contains "$action_source" $'2>"$authorization_errors" </dev/null &\nauthorizer_pid=$!' \
+  "osascript must run in the background with its PID kept, or no handler can stop it"
+assert_contains "$action_source" "trap 'finish_authorization; exit 1' INT TERM HUP" \
+  "the signal handlers must stop the authorizer before exiting"
+assert_contains "$action_source" $'finish_authorization() {\n  stop_authorizer' \
+  "finishing the authorization step must stop the authorizer first"
+assert_contains "$action_source" $'authorization_status=$?\n# Cleared before' \
+  "the authorizer PID must be cleared right after wait returns"
 
 # --- the privileged action map --------------------------------------------
 
