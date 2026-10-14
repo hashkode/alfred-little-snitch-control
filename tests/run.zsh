@@ -164,6 +164,29 @@ assert_equal "Little Snitch Control" "$(plist_value ':objects:2:config:title')" 
   "notifications must be attributable to this workflow, not to Little Snitch"
 assert_contains "$(plist_value ':webaddress')" "github.com" "webaddress should point at the project"
 
+# Alfred rewrites info.plist on import and drops top-level keys it does not
+# know. A key it drops makes the repository and every installed copy disagree:
+# `category` did. These are the keys Alfred 5 kept when it imported the 0.3.0
+# candidate. plutil's canonical XML puts top-level keys at exactly one tab.
+typeset -a alfred_top_level_keys
+alfred_top_level_keys=(bundleid connections createdby description disabled name objects readme uidata
+  userconfigurationconfig version webaddress)
+plist_top_level_keys=(${(f)"$(/usr/bin/plutil -convert xml1 -o - "$WORKFLOW_DIR/info.plist" | \
+  /usr/bin/sed -n $'s/^\t<key>\\(.*\\)<\\/key>$/\\1/p')"})
+(( ${#plist_top_level_keys} >= ${#alfred_top_level_keys} )) || \
+  fail "could not list info.plist's top-level keys (found ${#plist_top_level_keys})"
+pass
+for plist_key in "${plist_top_level_keys[@]}"; do
+  (( ${alfred_top_level_keys[(Ie)$plist_key]} )) || \
+    fail "info.plist key '$plist_key' is not one Alfred keeps on import"
+  pass
+done
+
+# The import text cannot follow a renamed keyword, so it names the default as a
+# default. If the default changes, the text has to change with it.
+assert_contains "$(plist_value ':readme')" "($keyword_default by default)" \
+  "the import text must name the default keyword as the default"
+
 # --- common.zsh: version policy -------------------------------------------
 
 source "$WORKFLOW_DIR/bin/common.zsh"
